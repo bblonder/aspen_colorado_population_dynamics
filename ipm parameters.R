@@ -5,4 +5,7 @@ MAX_ITERATIONS = 200
 # IPM size resolution
 mesh_points = 100
 
+# number of resamples for uncertainty propagation in data
+NUM_RESAMPLES = 10
+
 dbh_range = seq(0, DBH_max, length.out=mesh_points)

@@ -8,13 +8,15 @@ source('ipm parameters.R')
 
 params = read.csv('output_data/ipm_outcomes_lambda.csv')
 
-g_lambda = ggplot(params, aes(color=factor(Ploidy_levelTriploid),x=geneticSexIDM,y=lambda)) + 
+g_lambda = ggplot(params, aes(color=factor(Ploidy_levelTriploid),x=factor(geneticSexIDM),y=lambda)) + 
   geom_hline(yintercept = 1) +
-  geom_point(alpha=0.5) +
+  geom_point(alpha=0.5) + 
+  geom_jitter(height=0,width=0.2) + 
+  #geom_bar(stat='identity',alpha=0.5,position='dodge') +
   facet_grid(Cos.aspect~n_medium_trees) +
   theme_bw() +
-  scale_y_log10() +
-  scale_color_manual(values=c('blue','red'))
+  #scale_y_log10() +
+  scale_color_manual(values=c('blue','red'),name='Ploidy level (triploid)')
 
 g_lambda
 ggsave(g_lambda, file='output_figures/g_ipm_lambda.pdf')
@@ -37,7 +39,7 @@ g_age_structure_normalized = age_structure_normalized %>%
   mutate(dbh_index=as.numeric(gsub("V","",name))) %>%
   mutate(dbh = dbh_range[dbh_index]) %>%  
   ggplot(aes(x=dbh,y=value, group=row)) +
-  geom_line(alpha=0.5) +
+  geom_line(alpha=0.05) +
   theme_bw() +
   scale_y_sqrt() +
   xlab("Stable age structure DBH") +
@@ -59,6 +61,20 @@ ggsave(g_ipm_size_distribution, file='output_figures/g_ipm_size_distribution.pdf
 
 
 
+
+
+
+# summarize site-level results
+
+df_sites_for_ipm_joined_summarized = df_sites_for_ipm_joined %>% 
+  group_by(site_code) %>% 
+  summarize(lambda.mean=mean(lambda,na.rm=TRUE), 
+            lambda.sd=sd(lambda,na.rm=TRUE), 
+            p=t.test(lambda, mu=1)$p.value) %>%
+  mutate(p.adj = p.adjust(p, method="BH")) %>%
+  mutate(lambda_binned = ifelse(p<0.05, ifelse(lambda.mean < 1, 'decreasing', 'increasing'), 'stable'))
+
+
 # 
 # ggplot(df_sites_for_ipm_joined, aes(x=geneticSexID,y=lambda)) + 
 #   geom_boxplot()
@@ -69,7 +85,7 @@ g_map = ggplot(df_sites_for_ipm_joined, aes(x=X.UTM,y=Y.UTM, color=lambda, shape
   theme_bw()
 ggsave(g_map, file='output_figures/g_ipm_map.pdf',width=12,height=12)
 
-g_map_binned = ggplot(df_sites_for_ipm_joined, aes(x=X.UTM,y=Y.UTM, color=lambda_binned, shape=geneticSexID)) + 
+g_map_binned = ggplot(df_sites_for_ipm_joined, aes(x=X.UTM,y=Y.UTM, color=lambda_binned)) + 
   geom_point() +
   scale_color_manual(values=c('red','black','blue')) +
   theme_bw()
@@ -110,9 +126,9 @@ pca_all = df_sites_for_ipm_joined %>%
   prcomp(center=TRUE,scale=TRUE)
 
 
-g_pc_12 = ggbiplot(pca_all, alpha=0.5, choices=c(1,2)) +
+g_pc_12 = ggbiplot(pca_all, alpha=0.05, choices=c(1,2)) +
   theme_bw()
-g_pc_13 = ggbiplot(pca_all, alpha=0.5, choices=c(1,3)) +
+g_pc_13 = ggbiplot(pca_all, alpha=0.05, choices=c(1,3)) +
   theme_bw()
 ggsave(ggarrange(g_pc_12, g_pc_13,nrow=1,ncol=2), file='output_figures/g_ipm_pca.pdf', width=15,height=7)
 

@@ -189,7 +189,7 @@ transitions_all_filtered = transitions_all %>%
 # add in the small/medium/dead/density/genetics info
 transitions_all_filtered_joined = transitions_all_filtered %>%
   left_join(df_site_level %>% 
-              select(site_code, year, 
+              select(site_code, year,
                      Ploidy_level, geneticSexID, 
                      n_small_trees, n_medium_trees, 
                      Cos.aspect, Elevation,

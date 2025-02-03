@@ -7,11 +7,11 @@ library(MuMIn)
 library(ggplot2)
 library(car)
 library(sjPlot)
-
 library(tidyr)
 
 
 source('ipm parameters.R')
+set.seed(1) # reproducibility of resampling
 
 # load in data
 transitions_all_filtered_joined = read.csv('output_data/transitions_all_filtered_joined.csv')
@@ -25,6 +25,7 @@ transitions_all_filtered_joined_no_na = transitions_all_filtered_joined %>%
   mutate(size_mean = mean(size), size_sd = sd(size)) %>%
   select(surv, sizeNext, recruit, size, 
                 site_type, site_code, 
+                delta_years,
                 Ploidy_level, geneticSexID, 
                 Cos.aspect, 
                 n_medium_trees, 
@@ -32,91 +33,121 @@ transitions_all_filtered_joined_no_na = transitions_all_filtered_joined %>%
   na.omit %>%
   filter(site_type == 'random')
 
+# get resampled dataset for bootstrapping
+transitions_resampled = lapply(1:NUM_RESAMPLES, function(x) { 
+  transitions_all_filtered_joined_no_na[sample(1:nrow(transitions_all_filtered_joined_no_na), size=nrow(transitions_all_filtered_joined_no_na), replace=TRUE),] 
+  })
+
 
 # fit vital rate models
-m_survival = glm(factor(surv) ~ size*(Ploidy_level*geneticSexID + Cos.aspect) + population_density_m2, 
+m_survival_all = glm(factor(surv) ~ delta_years + (size*(Ploidy_level*geneticSexID + Cos.aspect) + population_density_m2), 
                  data = transitions_all_filtered_joined_no_na, 
                  family = binomial())
 
+m_survival_resampled = lapply(transitions_resampled, function(x) {
+  glm(factor(surv) ~ delta_years + (size*(Ploidy_level*geneticSexID + Cos.aspect) + population_density_m2), 
+      data = x, 
+      family = binomial())
+  })
+
 pdf(file='output_figures/g_ipm_survival.pdf',width=10,height=10)
-plot_model(m_survival, type='std', sort.est=TRUE) + 
+plot_model(m_survival_all, type='std', sort.est=TRUE) + 
   theme_bw() + 
   geom_hline(yintercept = 1) +
   ggtitle('survival, standardized effect')
-plot_model(m_survival, type='int')
-simulateResiduals(m_survival) %>% plot
+plot_model(m_survival_all, type='int')
+simulateResiduals(m_survival_all) %>% plot
 dev.off()
 
-coef(m_survival)
-Anova(m_survival)
-# simulateResiduals(m_survival) %>% plot
-# #visreg(m_survival,xvar='size',by='geneticSexID',gg=TRUE, overlay=TRUE)
-# visreg(m_survival,xvar='size',by='Ploidy_level',gg=TRUE, overlay=TRUE)
+Anova(m_survival_all)
 
 
-m_growth = lm(sizeNext ~ size*(Ploidy_level*geneticSexID + Cos.aspect) + population_density_m2, 
+
+
+m_growth_all = lm(sizeNext ~ delta_years + size*(Ploidy_level*geneticSexID + Cos.aspect) + population_density_m2, 
                data = transitions_all_filtered_joined_no_na)
+m_growth_resampled = lapply(transitions_resampled, function(x) {
+  lm(sizeNext ~ delta_years + size*(Ploidy_level*geneticSexID + Cos.aspect) + population_density_m2, 
+     data = x)
+})
 
 pdf(file='output_figures/g_ipm_growth.pdf',width=10,height=10)
-plot_model(m_growth, type='est', sort.est=TRUE, rm.terms='size') + 
+plot_model(m_growth_all, type='est', sort.est=TRUE, rm.terms='size') + 
   theme_bw() + 
   geom_hline(yintercept = 0) +
   ggtitle('growth, standardized effect')
-plot_model(m_growth, type='int')
-simulateResiduals(m_growth) %>% plot
+plot_model(m_growth_all, type='int')
+simulateResiduals(m_growth_all) %>% plot
 dev.off()
 
-coef(m_growth)
-Anova(m_growth)
-# simulateResiduals(m_growth) %>% plot
-# visreg(m_growth,xvar='size',by='geneticSexID',gg=TRUE, overlay=TRUE)
-# visreg(m_growth,xvar='size',by='Ploidy_level',gg=TRUE, overlay=TRUE)
+Anova(m_growth_all)
 
-# n small trees does not matter, basal area density might
-m_recruit = glm(factor(recruit) ~ n_medium_trees*(Ploidy_level*geneticSexID + Cos.aspect) + population_density_m2,
+
+
+
+
+m_recruit_all = glm(factor(recruit) ~ delta_years + n_medium_trees*(Ploidy_level*geneticSexID + Cos.aspect) + population_density_m2,
                 data=transitions_all_filtered_joined_no_na,family = binomial())
+m_recruit_resampled = lapply(transitions_resampled, function(x) {
+  glm(factor(recruit) ~ delta_years + n_medium_trees*(Ploidy_level*geneticSexID + Cos.aspect) + population_density_m2,
+      data=x,family = binomial())
+})
 
 pdf(file='output_figures/g_ipm_recruit.pdf',width=10,height=10)
-plot_model(m_recruit, type='std', sort.est=TRUE) + 
+plot_model(m_recruit_all, type='std', sort.est=TRUE) + 
   theme_bw() + 
   geom_hline(yintercept = 1) +
   ggtitle('recruit, standardized effect')
-plot_model(m_recruit, type='int')
-simulateResiduals(m_recruit) %>% plot
+plot_model(m_recruit_all, type='int')
+simulateResiduals(m_recruit_all) %>% plot
 dev.off()
 
-coef(m_recruit)
-Anova(m_recruit)
-simulateResiduals(m_recruit) %>% plot
-# visreg(m_recruit,xvar='n_medium_trees',by='geneticSexID',gg=TRUE, overlay=TRUE)
-# #visreg(m_recruit,xvar='n_medium_trees',by='Ploidy_level',gg=TRUE, overlay=TRUE)
+Anova(m_recruit_all)
 
-# update_coefficients <- function(coefs, xvar, is_triploid, is_male)
-# {
-#   intercept = coefs["(Intercept)"]
-#   slope = coefs[xvar]
-#   
-#   if (is_triploid==TRUE)
-#   {
-#     intercept = intercept + coefs["Ploidy_levelTriploid"]
-#     slope = slope + coefs[sprintf("%s:Ploidy_levelTriploid",xvar)]
-#   }
-#   if (is_male==TRUE)
-#   {
-#     intercept = intercept + coefs["geneticSexIDM"]
-#     slope = slope + coefs[sprintf("%s:geneticSexIDM",xvar)]
-#   }
-#   
-#   if (is_triploid==TRUE & is_male==TRUE)
-#   {
-#     intercept = intercept + coefs["Ploidy_levelTriploid:geneticSexIDM"]
-#     slope = slope + coefs[sprintf("%s:Ploidy_levelTriploid:geneticSexIDM",xvar)]
-#   }
-#   
-#   return(c(intercept=as.numeric(intercept), slope=as.numeric(slope)))
-# }
 
-update_coefficients_full <- function(coefficients, xvar, othervars)
+
+
+
+# look at the distribution of resampled coefficients
+g_m_survival_resampled = sapply(m_survival_resampled, coef) %>% 
+  t %>%
+  as.data.frame %>%
+  pivot_longer(cols=everything()) %>%
+  ggplot(aes(x=name,y=value)) + 
+  geom_point() +
+  coord_flip() + 
+  theme_bw() +
+  ggtitle('Survival model bootstrap')
+ggsave(g_m_survival_resampled, file='output_figures/g_m_survival_resampled.pdf')
+
+g_m_growth_resampled = sapply(m_growth_resampled, coef) %>% 
+  t %>%
+  as.data.frame %>%
+  pivot_longer(cols=everything()) %>%
+  ggplot(aes(x=name,y=value)) + 
+  geom_point() +
+  coord_flip() + 
+  theme_bw() +
+  ggtitle('Growth model bootstrap')
+ggsave(g_m_growth_resampled, file='output_figures/g_m_growth_resampled.pdf')
+
+g_m_recruit_resampled = sapply(m_recruit_resampled, coef) %>% 
+  t %>%
+  as.data.frame %>%
+  pivot_longer(cols=everything()) %>%
+  ggplot(aes(x=name,y=value)) + 
+  geom_point() +
+  coord_flip() + 
+  theme_bw() +
+  ggtitle('Recruitment model bootstrap')
+ggsave(g_m_recruit_resampled, file='output_figures/g_m_recruit_resampled.pdf')
+
+
+
+
+
+
+update_coefficients_full <- function(coefficients, xvar, other_vars)
 {
   names_all = names(coefficients) 
   indices_slope = grepl(xvar, names_all)
@@ -129,10 +160,10 @@ update_coefficients_full <- function(coefficients, xvar, othervars)
   names(terms_intercept) = gsub("\\(Intercept\\)","1",names(terms_intercept))
   
   # rewrite variable names according to values
-  for (i in 1:length(othervars))
+  for (i in 1:length(other_vars))
   {
-    names(terms_intercept) = gsub(names(othervars)[i], othervars[i], names(terms_intercept))
-    names(terms_slope) = gsub(names(othervars)[i], othervars[i], names(terms_slope))
+    names(terms_intercept) = gsub(names(other_vars)[i], other_vars[i], names(terms_intercept))
+    names(terms_slope) = gsub(names(other_vars)[i], other_vars[i], names(terms_slope))
   }
   # replace colons with multiplication
   names(terms_intercept) = gsub(":","*", names(terms_intercept))
@@ -164,7 +195,10 @@ hist(transitions_all_filtered_joined_no_na$size)
 # make initial size distribution to be the grand mean/sd of the training data
 
 # set the recruitment conditions
-make_ipm_for_site <- function(othervars, 
+make_ipm_for_site <- function(m_survival,
+                              m_growth,
+                              m_recruit,
+                              other_vars, 
                               size_mean = mean(transitions_all_filtered_joined_no_na$size),
                               size_sd = sd(transitions_all_filtered_joined_no_na$size),
                               population_density_initial = mean(transitions_all_filtered_joined_no_na$population_density_m2))
@@ -182,9 +216,10 @@ make_ipm_for_site <- function(othervars,
   
   
   # get size dependent coefficients, by setting population density to zero to eliminate its effect
-  coef_survival_size = update_coefficients_full(coef(m_survival), xvar='size', othervars=c(othervars,population_density_m2=0))
-  coef_growth_size = update_coefficients_full(coef(m_growth), xvar='size', othervars=c(othervars,population_density_m2=0))
-  coef_recruit_n_medium_trees = update_coefficients_full(coef(m_recruit), xvar='size', othervars=c(othervars,population_density_m2=0))
+  # also standardize to a 3-year interval to interpret the transitions
+  coef_survival_size = update_coefficients_full(coef(m_survival), xvar='size', other_vars=c(other_vars,population_density_m2=0, delta_years=3))
+  coef_growth_size = update_coefficients_full(coef(m_growth), xvar='size', other_vars=c(other_vars,population_density_m2=0, delta_years=3))
+  coef_recruit_n_medium_trees = update_coefficients_full(coef(m_recruit), xvar='size', other_vars=c(other_vars,population_density_m2=0, delta_years=3))
   # get density dependent coefficients, assming there are no size interactions
   coef_growth_density = coef(m_growth)["population_density_m2"]
   coef_survival_density = coef(m_survival)["population_density_m2"]
@@ -319,36 +354,38 @@ make_ipm_for_site <- function(othervars,
   return(ipm_aspen)
 }
 
-ipm_this = make_ipm_for_site(othervars=list(geneticSexIDM="0",
-                                            Ploidy_levelTriploid="1",
-                                            n_medium_trees=0,
-                                            Cos.aspect=-1))
+ipm_all = make_ipm_for_site(
+  m_survival = m_survival_all,
+  m_growth = m_growth_all,
+  m_recruit = m_recruit_all,
+  other_vars=list(geneticSexIDM="0",
+    Ploidy_levelTriploid="1",
+    n_medium_trees=0,
+    Cos.aspect=-1)
+  )
 
 
 
 # get lambda
-plot(lambda(ipm_this))
+plot(lambda(ipm_all))
 
 # look at trajectory of age distribution
-image(ipm_this$pop_state$n_dbh %>% sqrt,xlab='size',ylab='time')
+image(ipm_all$pop_state$n_dbh %>% sqrt,xlab='size',ylab='time')
 
 # look at final age structure (sqrt transformed)
 plot(dbh_range, 
-     sqrt(ipm_this$pop_state$n_dbh[,MAX_ITERATIONS+1]),
+     sqrt(ipm_all$pop_state$n_dbh[,MAX_ITERATIONS+1]),
      type='h',xlab='DBH (cm)',ylab='sqrt # m-2')
 
-# look at age structure     
-# w_ipmr      <- right_ev(ipm_this)
-# plot(dbh_range, w_ipmr$dbh_w,type='h')
 
 # look at kernels at initial densities
 pdf(file='output_figures/g_ipm_kernels.pdf',width=10,height=5)
 par(mfrow=c(1,2))
-plot(ipm_this$sub_kernels$P_it_1); title('P subkernel')
-plot(ipm_this$sub_kernels$F_it_1); title('F subkernel')
+plot(ipm_all$sub_kernels$P_it_1); title('P subkernel')
+plot(ipm_all$sub_kernels$F_it_1); title('F subkernel')
 dev.off()
 
-rm(ipm_this)
+rm(ipm_all)
 
 
 
@@ -358,15 +395,36 @@ rm(ipm_this)
 
 # now look at performance variation across parameters
 
-params = expand.grid(geneticSexIDM=c("0","1"), Ploidy_levelTriploid=c("0","1"), n_medium_trees=c(0,2,4,6),Cos.aspect=c(-1,-0.5,0,0.5,1))
+params = expand.grid(replicate=1:NUM_RESAMPLES,
+                     geneticSexIDM=c("0","1"), 
+                     Ploidy_levelTriploid=c("0","1"), 
+                     n_medium_trees=c(0,2,4),
+                     Cos.aspect=c(-1,0,1))
 
 lambdas = sapply(1:nrow(params), function(i) {
-  ipm_this = make_ipm_for_site(as.list(params[i,]))
-
-  cat(sprintf('%.3f\n',i/nrow(params)))
   
+  cat(sprintf('%d %.3f\n',i, i/nrow(params)))
+  
+  ipm_this = NULL
+  try(ipm_this <- make_ipm_for_site(
+      m_survival = m_survival_resampled[[ params$replicate[i] ]],
+      m_growth = m_growth_resampled[[ params$replicate[i] ]],
+      m_recruit = m_recruit_resampled[[ params$replicate[i] ]],
+      other_vars = as.list(params[i,])
+    ))
+  
+  if (!is.null(ipm_this))
+  {
+    lambda = mean(as.numeric(lambda(ipm_this)))
+  }
+  else
+  {
+    lambda = NA
+  }
+  print(lambda)
+ 
   # get the mean lambda over time
-  return(mean(as.numeric(lambda(ipm_this))))
+  return(lambda)
 })
 params$lambda = lambdas
 
@@ -390,31 +448,50 @@ df_sites_for_ipm = transitions_all_filtered_joined_no_na %>%
          site_code, site_type) %>%
   group_by(site_code) %>%
   slice_max(year) %>%
-  unique
+  unique %>%
+  mutate(replicate=NUM_RESAMPLES) %>%
+  uncount(replicate) %>%
+  group_by(site_code) %>%
+  mutate(replicate=row_number())
 df_sites_for_ipm$lambda = NA
 
-age_structure_sites_for_ipm = matrix(NA, nrow=nrow(df_sites_for_ipm), ncol=mesh_points)
+
+age_structure_sites_all = matrix(NA, nrow=nrow(df_sites_for_ipm), ncol=mesh_points)
 
 # try to map out all the sites
 for (i in 1:nrow(df_sites_for_ipm))
 {
   print(i)
-  ipm_this = make_ipm_for_site(othervars = list(
-    geneticSexIDM=ifelse(df_sites_for_ipm$geneticSexID[i]=="M","1","0"),
-    Ploidy_levelTriploid=ifelse(df_sites_for_ipm$Ploidy_level[i]=="Triploid","1","0"),
-    n_medium_trees=df_sites_for_ipm$n_medium_trees[i],
-    Cos.aspect=df_sites_for_ipm$Cos.aspect[i]),
-    size_mean = df_sites_for_ipm$size_mean[i],
-    size_sd = df_sites_for_ipm$size_sd[i],
-    population_density_initial = df_sites_for_ipm$population_density_m2[i]
-  )
-  df_sites_for_ipm$lambda[i] = mean(as.numeric(lambda(ipm_this)))
-  age_structure_sites_for_ipm[i,] = ipm_this$pop_state$n_dbh[,MAX_ITERATIONS+1]
+  ipm_this = NULL
+  
+  try(ipm_this <- make_ipm_for_site(
+    m_survival = m_survival_resampled[[ df_sites_for_ipm$replicate[i] ]],
+    m_growth = m_growth_resampled[[ df_sites_for_ipm$replicate[i] ]],
+    m_recruit = m_recruit_resampled[[ df_sites_for_ipm$replicate[i] ]],
+    other_vars = list(
+      geneticSexIDM=ifelse(df_sites_for_ipm$geneticSexID[i]=="M","1","0"),
+      Ploidy_levelTriploid=ifelse(df_sites_for_ipm$Ploidy_level[i]=="Triploid","1","0"),
+      n_medium_trees=df_sites_for_ipm$n_medium_trees[i],
+      Cos.aspect=df_sites_for_ipm$Cos.aspect[i]),
+      size_mean = df_sites_for_ipm$size_mean[i],
+      size_sd = df_sites_for_ipm$size_sd[i],
+      population_density_initial = df_sites_for_ipm$population_density_m2[i]
+  ))
+  if (!is.null(ipm_this))
+  {
+    df_sites_for_ipm$lambda[i] = mean(as.numeric(lambda(ipm_this)))
+    age_structure_sites_all[i,] = ipm_this$pop_state$n_dbh[,MAX_ITERATIONS+1]
+  }
+  else
+  {
+    df_sites_for_ipm$lambda[i] = NA
+    age_structure_sites_all[i,] = NA
+  }
   
   print(df_sites_for_ipm$lambda[i])
 }
 
-write.csv(age_structure_sites_for_ipm, file='output_data/sites_age_structure.csv', row.names = FALSE)
+write.csv(age_structure_sites_all, file='output_data/sites_age_structure.csv', row.names = FALSE)
 
 
 df_site_level = read.csv('/Users/benjaminblonder/Documents/ASU/aspen remote sensing/2019/data analysis 2020/aspen data site-level processed 30 Mar 2020.csv')
@@ -426,6 +503,13 @@ df_sites_for_ipm_joined = df_sites_for_ipm %>%
                      Cow_Damage, Summer.Insolation, Soil.type), by='site_code') %>%
   mutate(lambda_binned = cut(lambda, breaks=c(0,0.99,1.01,Inf),labels=c('decreasing','stable','increasing')))
 
-df_sites_for_ipm_joined$dbh_modal = dbh_range[apply(age_structure_sites_for_ipm, 1, which.max)]
+df_sites_for_ipm_joined$dbh_modal = dbh_range[apply(age_structure_sites_all, 1, function(x) { 
+  result = which.max(x)
+  if (length(result)==0)
+  {
+    result = NA
+  }
+  return(result)
+  })]
 
 write.csv(df_sites_for_ipm_joined, file='output_data/sites_data_frame.csv', row.names = FALSE)
