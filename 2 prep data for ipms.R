@@ -28,12 +28,35 @@ df_site_level = df_site_level %>%
   mutate(Point_Type = ifelse(nchar(site_code)==4,'Grid','Random'))
 
 
+
+
 df_tree_level = read.csv('data/aspen_data_tree-level_2018-2023_2024-11-22.csv')
 # keep only the aspens
 df_tree_level = df_tree_level %>% 
   filter(species=="P. tremuloides")
 # this is a hack to fix a typo in the raw data (12/9/2024)
 df_tree_level$tree_num[df_tree_level$site_code=="PHRAZ01" & df_tree_level$year==2020 & df_tree_level$tree_num==11] = c(11,12)
+
+
+
+# # augment the tree level data with the mini-census data from 2023 (code commented out - this is already being done)
+# df_to_add = df_site_level %>% filter(year==2023 & is.na(plot_radius_m)) %>%
+#   mutate(DBH=dbh_center_live) %>%
+#   mutate(species='P. tremuloides') %>%
+#   mutate(tree_num=0, found='x',dist=0,dir=NA,
+#          tree_status_dead=FALSE, tree_status_damaged=FALSE) %>% #### CHECK THIS WITH ERIN!!!
+#   select(names(.)[names(.) %in% names(df_tree_level)])
+# 
+# # add in missing columns
+# names_missing = setdiff(names(df_tree_level),names(df_to_add))
+# df_blank = matrix(NA, nrow=nrow(df_to_add),ncol=length(names_missing), dimnames=list(NULL, names_missing))
+# df_to_add_full = cbind(df_blank, df_to_add) %>%
+#   select(names(df_tree_level))
+# 
+# # add in the new observations
+# df_tree_level = rbind(df_tree_level, df_to_add_full)
+
+
 
 
 
