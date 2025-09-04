@@ -11,7 +11,7 @@ library(tidyr)
 library(ggeffects)
 library(ggpubr)
 library(pbapply)
-
+library(popbio)
 
 source('ipm parameters.R')
 set.seed(1) # reproducibility of resampling
@@ -434,23 +434,34 @@ make_ipm_for_site <- function(m_survival,
   return(ipm_aspen)
 }
 
-ipm_male_triploid_south = make_ipm_for_site(
+ipm_female_triploid_south = make_ipm_for_site(
   m_survival = m_survival_all,
   m_growth = m_growth_all,
   m_recruit = m_recruit_all,
   other_vars=list(geneticSexIDM="0",
     Ploidy_levelTriploid="1",
-    n_medium_trees=2,
+    n_medium_trees=5,
     Cos.aspect=-1)
   )
+
+# this is a density dependent deterministic model, so let's look
+# for elasticities close to equilibrium...
+K_female_triploid_south = as.matrix(ipm_female_triploid_south$sub_kernels$P_it_300 + ipm_female_triploid_south$sub_kernels$F_it_300)
+image(sqrt(elasticity(K_female_triploid_south)))
+e_female_triploid_south = elasticity(K_female_triploid_south)
+# # code below from https://compadre-db.org/Education/article/sensitivity-and-elasticity-matrices
+# w <- eigen(mat)$vectors
+# v <- Conj(solve(w))
+# senmat <- Re(v[1,] %*% t(w[,1]))
+# emat <- (1/(Re(eigen(mat)$values[1]))) * senmat * mat
 
 
 
 # get lambda
-plot(lambda(ipm_male_triploid_south),xlab='time step',ylab='lambda')
+plot(ipmr::lambda(ipm_female_triploid_south),xlab='time step',ylab='lambda')
 
 # look at trajectory of age distribution
-image(ipm_male_triploid_south$pop_state$n_dbh %>% sqrt,xlab='size',ylab='time')
+image(ipm_female_triploid_south$pop_state$n_dbh %>% sqrt,xlab='size',ylab='time')
 
 # look at final age structure (sqrt transformed)
 plot(dbh_range, 
@@ -484,17 +495,18 @@ plot_kernel <- function(k, name)
     theme_bw() +
     scale_fill_viridis_c(option='C',name='Value') +
     xlab('Size (cm)') + ylab('Size next (cm)') +
-    geom_abline(slope=1,intercept=0,color='white',alpha=0.5) +
+    #geom_abline(slope=1,intercept=0,color='white',alpha=0.5) +
     coord_equal() +
     scale_x_continuous(expand=c(0,0)) +
     scale_y_continuous(expand=c(0,0)) +
-    ggtitle(sprintf('%s sub-kernel',name)) 
+    ggtitle(sprintf('%s',name)) 
 }
 
-k1 = plot_kernel(ipm_male_triploid_south$sub_kernels$P_it_200, 'P')
-k2 = plot_kernel(ipm_male_triploid_south$sub_kernels$F_it_200, 'F')
-ggsave(ggarrange(k1, k2, labels='AUTO', align='hv'),file='output_figures/g_ipm_kernel_male_triploid_south.pdf',width=7,height=2.5)
-ggsave(ggarrange(k1, k2, labels='AUTO', align='hv'),file='output_figures/g_ipm_kernel_male_triploid_south.png',width=7,height=2.5)
+k1 = plot_kernel(ipm_female_triploid_south$sub_kernels$P_it_200, 'P sub-kernel')
+k2 = plot_kernel(ipm_female_triploid_south$sub_kernels$F_it_200, 'F sub-kernel')
+k3 = plot_kernel((e_female_triploid_south)^(1/2), 'Elasticity (square root)')
+ggsave(ggarrange(k1, k2, k3, labels='AUTO', align='hv',nrow=2,ncol=2),file='output_figures/g_ipm_kernel_female_triploid_south.pdf',width=7,height=5)
+ggsave(ggarrange(k1, k2, k3, labels='AUTO', align='hv',nrow=2,ncol=2),file='output_figures/g_ipm_kernel_female_triploid_south.png',width=7,height=5)
 
 
 
@@ -521,7 +533,7 @@ lambdas = pbsapply(1:nrow(params), function(i) {
   
   if (!is.null(ipm_this))
   {
-    lambda = mean(tail(as.numeric(lambda(ipm_this)),5)) # take the final 5 lambda values and average
+    lambda = mean(tail(as.numeric(ipmr::lambda(ipm_this)),5)) # take the final 5 lambda values and average
   }
   else
   {
@@ -609,7 +621,7 @@ lambdas_sites = pblapply(1:nrow(df_sites_for_ipm), function(i)
   ))
   if (!is.null(ipm_this))
   {
-    lambda = mean(tail(as.numeric(lambda(ipm_this)),5))
+    lambda = mean(tail(as.numeric(ipmr::lambda(ipm_this)),5))
     #age_structure_sites_all[i,] = ipm_this$pop_state$n_dbh[,MAX_ITERATIONS+1]
   }
   else

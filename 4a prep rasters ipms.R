@@ -9,7 +9,7 @@ library(ipmr)
 
 load('output_data/workspace for ipm.Rdata')
 
-AGGREGATION_LEVEL = 20 # starting at 5 m, so this is multiplicative of that amount
+AGGREGATION_LEVEL = 10 # starting at 5 m, so this is multiplicative of that amount
 
 r_sex = rast('/Users/benjaminblonder/Documents/ASU/aspen remote sensing/aspen sex markers/aspen_sex_prediction_20250110.tif')
 r_ploidy_level = rast('/Users/benjaminblonder/Documents/ASU/aspen remote sensing/2019/spectra analysis neon aop/cytotype analysis/layers/min_phase_cytotype_medfilt-seived.tif')
@@ -40,7 +40,8 @@ r_medium_trees_constant_proj[] = 5 #median(df_sites_for_ipm_joined$n_medium_tree
 r_medium_trees_midelevation_proj = r_cos_aspect_proj
 m_nmt = nls(n_medium_trees ~ k*exp(-1/2*(Elevation-mu)^2/sigma^2),start=c(mu=3000,sigma=500,k=3) ,
             data = transitions_all_filtered_joined_no_na)
-r_medium_trees_midelevation_proj[] = predict(m_nmt, newdata=data.frame(Elevation=as.numeric(r_elevation_coarse[])))
+# do an optimistic scenario
+r_medium_trees_midelevation_proj[] = 4*predict(m_nmt, newdata=data.frame(Elevation=as.numeric(r_elevation_coarse[])))
 
 
 writeRaster(r_sex_proj, file='output_data/r_sex_proj.tif', overwrite=TRUE)
