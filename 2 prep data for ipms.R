@@ -207,7 +207,7 @@ transitions_all_filtered = transitions_all %>%
   mutate(sizeNext = ifelse(abs(growth_rate) < 1.5,sizeNext,NA)) %>%
 # identify recruits as one that started at exactly 5 and did not grow much 
 # (maybe there is a better way, could flag these 
-  mutate(recruit = (size==5 & sizeNext < 5.5))
+  mutate(recruit = (size==5 & sizeNext < 6))
 
 # add in the small/medium/dead/density/genetics info
 transitions_all_filtered_joined = transitions_all_filtered %>%

@@ -11,6 +11,11 @@ library(ggpubr)
 r_scenario_constant = rast('output_data/r_lambda_n_medium_constant_5.tif')
 r_scenario_midelevation = rast('output_data/r_lambda_n_medium_midelevation.tif')
 
+as.numeric(r_scenario_constant[] < 1) %>% table
+25018/(15948+25018)
+as.numeric(r_scenario_midelevation[] < 1) %>% table
+20866/(20036+20866)
+
 make_map <- function(raster, title)
 {
   g = ggplot() + 
@@ -28,11 +33,11 @@ make_map <- function(raster, title)
   return(g)
 }
 
-g1 = make_map(r_scenario_constant, 'Recruitment spatially constant')
-g2 = make_map(r_scenario_midelevation, 'Recruitment peak at mid-elevation')
+g1 = make_map(r_scenario_constant, 'Recruitment moderate, spatially constant')
+g2 = make_map(r_scenario_midelevation, 'Recruitment high, peak at mid-elevation')
 
 ggsave(ggarrange(g1, g2,labels='AUTO', common.legend = TRUE, legend='bottom',nrow=1,ncol=2), 
-                   file='output_figures/g_lambda_map.png',width=8,height=4)
+                   file='output_figures/g_lambda_map.png',width=10,height=5)
 
 
 

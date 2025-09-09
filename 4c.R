@@ -13,6 +13,7 @@ source('ipm parameters.R')
 r_sex_proj = rast('output_data/r_sex_proj.tif') 
 r_ploidy_level_proj = rast('output_data/r_ploidy_level_proj.tif') 
 r_cos_aspect_proj = rast('output_data/r_cos_aspect_proj.tif') 
+r_elev_proj = rast('output_data/r_elev_proj.tif')
 
 r_medium_trees_constant_proj = rast('output_data/r_medium_trees_constant_proj.tif') 
 r_medium_trees_midelevation_proj = rast('output_data/r_medium_trees_midelevation_proj.tif') 
@@ -20,8 +21,8 @@ r_medium_trees_midelevation_proj = rast('output_data/r_medium_trees_midelevation
 
 make_ipm_spatial_scenario <- function(r_medium_trees_scenario)
 {
-  r_predictors = c(r_sex_proj, r_ploidy_level_proj, r_cos_aspect_proj, r_medium_trees_scenario)
-  names(r_predictors) = c('geneticSexID','Ploidy_level','Cos.aspect','n_medium_trees')
+  r_predictors = c(r_sex_proj, r_ploidy_level_proj, r_cos_aspect_proj, r_elev_proj, r_medium_trees_scenario)
+  names(r_predictors) = c('geneticSexID','Ploidy_level','Cos.aspect','Elevation', 'n_medium_trees')
   
   
   df_predictors = r_predictors[] %>%
@@ -51,7 +52,8 @@ make_ipm_spatial_scenario <- function(r_medium_trees_scenario)
       other_vars=list(geneticSexIDM=paste(df_predictors$geneticSexID[i]),
                       Ploidy_levelTriploid=paste(df_predictors$Ploidy_level[i]),
                       n_medium_trees=df_predictors$n_medium_trees[i],
-                      Cos.aspect=df_predictors$Cos.aspect[i])
+                      Cos.aspect=df_predictors$Cos.aspect[i],
+                      Elevation=df_predictors$Elevation[i])
     )
     
     if (!is.null(ipm_this))

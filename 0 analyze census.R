@@ -29,9 +29,9 @@ if(!("PREFIX_TYPE" %in% ls()))
 data_site = read.csv(sprintf('data/aspen_data_site-level_2018-2023_%s_2024-11-27.csv',PREFIX_TYPE))
 data_sex = read.csv('/Users/benjaminblonder/Documents/ASU/aspen remote sensing/aspen sex markers/aspen_sex_aug_11_2021.csv') %>%
   mutate(site_code = Site_Code) %>%
-  select(-Site_Code,-X.UTM,-Y.UTM)
+  dplyr::select(-Site_Code,-X.UTM,-Y.UTM)
 data_ploidy = read.csv('/Users/benjaminblonder/Documents/ASU/aspen remote sensing/2019/data analysis 2020/aspen data site-level processed 30 Mar 2020.csv') %>%
-  select(site_code=Site_Code,Ploidy_level,Cos.aspect,Elevation,Slope,X.UTM,Y.UTM,Watershed)
+  dplyr::select(site_code=Site_Code,Ploidy_level,Cos.aspect,Elevation,Slope,X.UTM,Y.UTM,Watershed)
 data_site = data_site %>%
   left_join(data_sex, by='site_code') %>%
   left_join(data_ploidy, by='site_code') %>%
@@ -45,6 +45,9 @@ data_site %>% select(site_code, Ploidy_level, Point_Type) %>% unique %>%
 data_site %>% select(site_code, geneticSexID, Point_Type) %>% unique %>%
   group_by(Point_Type, geneticSexID) %>%
   tally
+
+# get recruitment quantiles
+data_site %>% group_by(Point_Type) %>% summarize(quantile(n_medium_trees,0.95,na.rm=TRUE))
 
 # how many plots total
 data_site %>% filter(Point_Type=='Random') %>% pull(site_code) %>% unique %>% length
@@ -67,6 +70,7 @@ library(terra)
 library(stars)
 library(ggnewscale)
 library(ggspatial)
+
 coords = data_site %>% st_as_sf(coords=c("X.UTM","Y.UTM"), crs = 32613) %>%
   filter(Point_Type=='Random')
 elev = get_elev_raster(st_bbox(st_buffer(coords, dist=1000)), z=12) %>%
@@ -81,7 +85,8 @@ hill_single <- shade(sl, asp,
 
 
 g_map_inset = ggplot() + 
-  theme_void() + 
+  theme_bw() + 
+  xlab('Longitude') + ylab('Latitude') +
   geom_stars(data=st_as_stars(hill_single),show.legend=FALSE,alpha=0.5) +
   scale_fill_distiller(palette = "Greys") +
   new_scale_fill() +
@@ -131,24 +136,26 @@ r_ploidy_level_downsampled = crop(aggregate(r_ploidy_level,5,fun='median',na.rm=
 levels(r_ploidy_level_downsampled) = c('diploid','triploid')
 
 g_sex = ggplot() + 
-  theme_void() + 
+  theme_bw() + 
   geom_stars(data=st_as_stars(hill_single_trimmed),show.legend=FALSE,alpha=0.5) +
   scale_fill_distiller(palette = "Greys") +
   new_scale_fill() +
   geom_stars(data=st_as_stars(r_sex_downsampled)) +
-  scale_fill_manual(values=c('purple','orange'),name='Sex',na.value=NA) +
+  scale_fill_manual(values=c('green','purple'),name='Sex',na.value=NA) +
   annotation_scale() +
-  annotation_north_arrow(location='br')
+  annotation_north_arrow(location='br') +
+  xlab("Easting (m)") + ylab("Northing (m)")
 
 g_cytotype = ggplot() + 
-  theme_void() + 
+  theme_bw() + 
   geom_stars(data=st_as_stars(hill_single_trimmed),show.legend=FALSE,alpha=0.5) +
   scale_fill_distiller(palette = "Greys") +
   new_scale_fill() +
   geom_stars(data=st_as_stars(r_ploidy_level_downsampled)) +
-  scale_fill_manual(values=c('blue','red'),name='Cytotype',na.value=NA) +
+  scale_fill_manual(values=c('red','blue'),name='Cytotype',na.value=NA) +
   annotation_scale() +
-  annotation_north_arrow(location='br')
+  annotation_north_arrow(location='br') +
+  xlab("Easting (m)") + ylab("Northing (m)")
 
 ggsave(ggarrange(g_sex, g_cytotype, labels='AUTO',nrow=2,ncol=1),width=5,height=8, file='output_figures/g_sex_cytotype.png')
 
@@ -196,6 +203,52 @@ write.csv(data_site %>%
           file = sprintf('output_data/t_aspen_counts_details_%s.csv', PREFIX_TYPE), row.names = FALSE)
 
 
+
+fit_lm <- function(df, yvar)
+{
+  m_lm  = NULL
+  try(m_lm <- lm(formula(sprintf("%s~year",yvar)),data=df))
+          
+  if (!is.null(m_lm))
+  {
+    coefs = data.frame(t(coef(m_lm)))
+    names(coefs)=c('int','slope')
+  }
+  else
+  {
+    coefs = data.frame(int=NA,slope=NA)
+  }
+  return(coefs)
+}
+
+# do time series analyses
+slopes_mortality = data_site %>% 
+  filter(Point_Type=='Random') %>%
+  group_by(site_code) %>%
+  do(fit_lm(.,"frac_adult_dead_w_background_mortality_estimate"))
+
+slopes_mortality %>%
+  ungroup %>%
+  summarize(slope_mean = mean(slope, na.rm=TRUE), slope_sd = sd(slope, na.rm=TRUE)) * 100
+
+slopes_recruitment = data_site %>% 
+  filter(Point_Type=='Random') %>%
+  group_by(site_code) %>%
+  do(fit_lm(.,"n_medium_trees"))
+
+slopes_recruitment %>%
+  ungroup %>%
+  summarize(slope_mean = mean(slope, na.rm=TRUE), slope_sd = sd(slope, na.rm=TRUE))
+
+slopes_size = data_site %>% 
+  mutate(dbh_mean_live = ifelse(is.na(dbh_mean_live), dbh_center_live, dbh_mean_live)) %>%
+  filter(Point_Type=='Random') %>%
+  group_by(site_code) %>%
+  do(fit_lm(.,"dbh_mean_live"))
+
+slopes_size %>%
+  ungroup %>%
+  summarize(slope_mean = mean(slope, na.rm=TRUE), slope_sd = sd(slope, na.rm=TRUE))
 
 
 
@@ -316,14 +369,16 @@ ggsave(g_basal_area, file=sprintf('output_figures/g_basal_area_by_site_%s.png', 
 ### show where sites are
 
 # map out where site are missed
-g_counts = ggplot(data_site %>% 
-                    select(site_code, X.UTM, Y.UTM, Point_Type, year) %>% 
-                    group_by(site_code, X.UTM, Y.UTM, Point_Type) %>% 
-                    tally(), aes(x=X.UTM,y=Y.UTM,color=factor(n))) +
-  geom_point() +
+g_counts = ggplot() +
+  geom_stars(data=st_as_stars(hill_single_trimmed),show.legend=FALSE,alpha=0.5) +
+  scale_fill_distiller(palette = "Greys") +
+  geom_point(data=data_site %>% 
+               select(site_code, X.UTM, Y.UTM, Point_Type, year) %>% 
+               group_by(site_code, X.UTM, Y.UTM, Point_Type) %>% 
+               tally(), aes(x=X.UTM,y=Y.UTM,color=factor(n)),size=0.5) +
   theme_bw() +
   facet_wrap(~Point_Type) +
-  scale_color_viridis_d(option='viridis',name='# re-visits') +
+  scale_color_brewer(palette='Set2',name='# re-visits') +
   coord_equal() +
   xlab('Easting (m)') + ylab('Northing (m)') +
   theme(legend.position='bottom')
@@ -336,6 +391,8 @@ g_counts_grid = ggplot(data_site %>%
                          filter(Point_Type=='Grid') %>% 
                          group_by(site_code, Watershed, X.UTM, Y.UTM) %>% 
                          tally(), aes(x=X.UTM,y=Y.UTM,color=factor(n))) +
+  geom_stars(data=st_as_stars(hill_single_trimmed),show.legend=FALSE,alpha=0.5) +
+  scale_fill_distiller(palette = "Greys") +
   geom_point() +
   theme_bw() +
   scale_color_viridis_d(option='viridis',name='# re-visits') +
@@ -619,6 +676,7 @@ rows_na_pca_reduced = data_pca_reduced %>%
 
 data_pca_reduced = data_pca_reduced[which(!rows_na_pca_reduced),]
 
+# this is the model we use in the manuscript
 pca_reduced = prcomp(data_pca_reduced %>%
                    select(n_medium_trees:growth_rate),
                  center=TRUE, scale=TRUE)
@@ -626,7 +684,7 @@ pca_reduced = prcomp(data_pca_reduced %>%
 plot_pca(pca_reduced, data_pca_reduced, 'reduced_vars')
 
 
-
+with(pca_reduced, 100*(sdev^2)/sum(sdev^2))
 
 
 ######################## 
@@ -699,6 +757,12 @@ results_size = fit_plot_level_model(response_var="dbh_mean_live",
 results_n_medium = fit_plot_level_model(response_var="sqrt_n_medium_trees", 
                                     data=df_for_plot_level_model %>% mutate(sqrt_n_medium_trees = sqrt(n_medium_trees)), family=lognormal, zi=TRUE, 
                                     title = 'Number medium saplings (sqrt)')
+
+
+results_size$summary
+results_n_medium$summary
+results_frac_dead$summary
+
 
 
 g_plot_level = ggarrange( results_size$plot_effect, 

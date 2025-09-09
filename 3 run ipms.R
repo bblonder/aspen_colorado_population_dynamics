@@ -26,7 +26,7 @@ transitions_all_filtered_joined_no_na = transitions_all_filtered_joined %>%
   mutate(population_density_m2 = 10 / plot_area_m2) %>%
   group_by(site_code, year) %>%
   mutate(size_mean = mean(size), size_sd = sd(size)) %>%
-  select(surv, sizeNext, recruit, size, 
+  dplyr::select(surv, sizeNext, recruit, size, 
                 site_type, site_code, 
                 delta_years,
                 Ploidy_level, geneticSexID, 
@@ -49,7 +49,7 @@ counts_by_plot_year = transitions_all_filtered_joined_no_na %>%
   mutate(weight = 1/n)
 
 transitions_all_filtered_joined_no_na = transitions_all_filtered_joined_no_na %>%
-  left_join(counts_by_plot_year %>% select(year, site_code, weight),
+  left_join(counts_by_plot_year %>% dplyr::select(year, site_code, weight),
             by=c('year','site_code'))
 
 
@@ -62,7 +62,7 @@ transitions_resampled = lapply(1:NUM_RESAMPLES, function(x) {
 
 
 # fit vital rate models
-formula_survival = formula(factor(surv) ~ delta_years + size*(Ploidy_level*geneticSexID + Cos.aspect) + population_density_m2)
+formula_survival = formula(factor(surv) ~ delta_years + size * (Ploidy_level + geneticSexID + Cos.aspect + Elevation) + population_density_m2)
 m_survival_all = glm(formula=formula_survival, 
                  data = transitions_all_filtered_joined_no_na, 
                  family = binomial(),
@@ -90,11 +90,11 @@ dev.off()
 
 tab_model(m_survival_all, file='output_figures/table_model_tree_level_survival.html')
 
-Anova(m_survival_all)
+Anova(m_survival_all,type=3)
 
 
 
-formula_growth = formula(sizeNext ~ delta_years + size*(Ploidy_level*geneticSexID + Cos.aspect) + population_density_m2)
+formula_growth = formula(sizeNext ~ delta_years + size * (Ploidy_level + geneticSexID + Cos.aspect + Elevation) + population_density_m2)
 m_growth_all = glm(formula=formula_growth, 
                data = transitions_all_filtered_joined_no_na,
                weights=round(10*transitions_all_filtered_joined_no_na$weight))
@@ -116,12 +116,12 @@ plot_model(m_growth_all, type='int')
 simulateResiduals(m_growth_all) %>% plot
 dev.off()
 
-Anova(m_growth_all)
+Anova(m_growth_all,type=3)
 
 
 
 
-formula_recruit = formula(factor(recruit) ~ delta_years + n_medium_trees*(Ploidy_level*geneticSexID + Cos.aspect) + population_density_m2)
+formula_recruit = formula(factor(recruit) ~ delta_years + n_medium_trees * (Ploidy_level + geneticSexID + Cos.aspect + Elevation) + population_density_m2)
 m_recruit_all = glm(formula=formula_recruit,
                 data=transitions_all_filtered_joined_no_na,
                 family = binomial(),
@@ -146,8 +146,22 @@ plot_model(m_recruit_all, type='int')
 simulateResiduals(m_recruit_all) %>% plot
 dev.off()
 
-Anova(m_recruit_all)
+Anova(m_recruit_all,type=3)
 
+
+library(insight)
+
+anova_table = cbind(
+  Anova(m_survival_all,type=3) %>% as.data.frame %>% dplyr::select(p.survival=`Pr(>Chisq)`),
+  Anova(m_growth_all,type=3) %>% as.data.frame %>% dplyr::select(p.growth=`Pr(>Chisq)`),
+  Anova(m_recruit_all,type=3) %>% as.data.frame %>% dplyr::select(p.recruit=`Pr(>Chisq)`)
+)
+
+anova_table %>%
+  mutate(p.survival=format_p(p.survival,name=NULL)) %>%
+  mutate(p.growth=format_p(p.growth,name=NULL)) %>%
+  mutate(p.recruit=format_p(p.recruit,name=NULL)) %>%
+  write.csv(file='output_figures/table_anova_tree_level.csv',row.names=TRUE)
 
 
 
@@ -441,7 +455,8 @@ ipm_female_triploid_south = make_ipm_for_site(
   other_vars=list(geneticSexIDM="0",
     Ploidy_levelTriploid="1",
     n_medium_trees=5,
-    Cos.aspect=-1)
+    Cos.aspect=-1,
+    Elevation=3000)
   )
 
 # this is a density dependent deterministic model, so let's look
@@ -517,7 +532,8 @@ params = expand.grid(replicate=1:NUM_RESAMPLES,
                      geneticSexIDM=c("0","1"), 
                      Ploidy_levelTriploid=c("0","1"), 
                      n_medium_trees=c(0,5,15),
-                     Cos.aspect=c(-1,0,1))
+                     Cos.aspect=c(-1,0,1),
+                     Elevation=c(2800,3000,3200))
 
 lambdas = pbsapply(1:nrow(params), function(i) {
   
@@ -549,7 +565,17 @@ params$lambda = lambdas
 write.csv(params, file='output_data/ipm_outcomes_lambda.csv', row.names = FALSE)
 
 
+#
+params = read.csv('output_data/ipm_outcomes_lambda.csv')
+
+# summarize this model
+library(glmmTMB)
+m_lambda_summary = glmmTMB(lambda ~ geneticSexIDM*Ploidy_levelTriploid + n_medium_trees + Cos.aspect + Elevation + (1|replicate), data=params)
+tab_model(m_lambda_summary, file='output_figures/table_model_lambda.html')
+
+
 params_for_plotting = params %>%
+  filter(Cos.aspect==-1 & Elevation==3000) %>%
   mutate(sex=ifelse(geneticSexIDM==1,'M','F')) %>%
   mutate(cytotype=ifelse(Ploidy_levelTriploid==1,'triploid','diploid')) %>%
   mutate(n_medium_trees=factor(paste('# medium=',n_medium_trees,sep=''),levels=paste('# medium=',c(0,5,15),sep=''),ordered=TRUE)) %>%
@@ -563,15 +589,15 @@ g_lambda =  ggplot(params_for_plotting, aes(color=factor(cytotype),x=factor(sex)
   # geom_point(alpha=0.5) + 
   # geom_jitter(height=0,width=0.2) + 
   #geom_bar(stat='identity',alpha=0.5,position='dodge') +
-  facet_grid(Cos.aspect~n_medium_trees) +
+  facet_grid(~n_medium_trees) +
   theme_bw() +
   #scale_y_log10() +
   scale_color_manual(values=c('blue','red'),name='Cytotype') +
   xlab('Sex') +
   ylab(expression(paste(lambda)))
 
-ggsave(g_lambda, file='output_figures/g_ipm_lambda.pdf',width=6,height=6)
-ggsave(g_lambda, file='output_figures/g_ipm_lambda.png',width=6,height=6)
+ggsave(g_lambda, file='output_figures/g_ipm_lambda.pdf',width=6,height=3)
+ggsave(g_lambda, file='output_figures/g_ipm_lambda.png',width=6,height=3)
 
 
 
@@ -584,7 +610,7 @@ ggsave(g_lambda, file='output_figures/g_ipm_lambda.png',width=6,height=6)
 
 # now map lambdas for all the plots
 df_sites_for_ipm = transitions_all_filtered_joined_no_na %>%
-  select(geneticSexID, Ploidy_level, n_medium_trees, Cos.aspect,
+  select(geneticSexID, Ploidy_level, n_medium_trees, Cos.aspect, Elevation,
          population_density_m2, 
          size_mean, size_sd,
          site_code, site_type,
@@ -611,10 +637,11 @@ lambdas_sites = pblapply(1:nrow(df_sites_for_ipm), function(i)
     m_growth = m_growth_resampled[[ df_sites_for_ipm$replicate[i] ]],
     m_recruit = m_recruit_resampled[[ df_sites_for_ipm$replicate[i] ]],
     other_vars = list(
-      geneticSexIDM=ifelse(df_sites_for_ipm$geneticSexID[i]=="M","1","0"),
-      Ploidy_levelTriploid=ifelse(df_sites_for_ipm$Ploidy_level[i]=="Triploid","1","0"),
-      n_medium_trees=df_sites_for_ipm$n_medium_trees[i],
-      Cos.aspect=df_sites_for_ipm$Cos.aspect[i]),
+        geneticSexIDM=ifelse(df_sites_for_ipm$geneticSexID[i]=="M","1","0"),
+        Ploidy_levelTriploid=ifelse(df_sites_for_ipm$Ploidy_level[i]=="Triploid","1","0"),
+        n_medium_trees=df_sites_for_ipm$n_medium_trees[i],
+        Cos.aspect=df_sites_for_ipm$Cos.aspect[i],
+        Elevation=df_sites_for_ipm$Elevation[i]),
       size_mean = df_sites_for_ipm$size_mean[i],
       size_sd = df_sites_for_ipm$size_sd[i],
       population_density_initial = df_sites_for_ipm$population_density_m2[i]
@@ -658,6 +685,7 @@ df_sites_for_ipm_joined = df_sites_for_ipm %>%
 
 write.csv(df_sites_for_ipm_joined, file='output_data/ipm_outcomes_lambda_by_plot.csv', row.names = FALSE)
 
+df_sites_for_ipm_joined = read.csv('output_data/ipm_outcomes_lambda_by_plot.csv')
 
 
 
@@ -670,20 +698,28 @@ df_sites_for_ipm_joined_summarized = df_sites_for_ipm_joined %>%
   mutate(p.adj = p.adjust(p, method="BH")) %>%
   mutate(lambda_binned = ifelse(p<0.05, ifelse(lambda.mean < 1, 'decreasing', 'increasing'), 'stable'))
 
+mean(df_sites_for_ipm_joined_summarized$lambda.mean,na.rm=TRUE)
+sd(df_sites_for_ipm_joined_summarized$lambda.mean,na.rm=TRUE)
+
+table(df_sites_for_ipm_joined_summarized$lambda_binned)
+table(df_sites_for_ipm_joined_summarized$lambda_binned)/nrow(df_sites_for_ipm_joined_summarized)
+
 g_map_lambda_binned = ggplot(df_sites_for_ipm_joined_summarized %>%
                                filter(!is.na(lambda.mean)), 
                            aes(x=X.UTM,y=Y.UTM, color=lambda.mean,shape=lambda_binned)) + 
   geom_point(alpha=0.8) +
-  scale_color_gradient2(low='red',high='blue',mid='gray',midpoint=1,
+  scale_color_gradient2(midpoint=1,
+                       low = 'darkorange',high='darkorchid1',mid = 'gray',
+                       limits=c(0.9,1.1),
                         #limits=c(0.95,1.05),
                         name=expression(paste(lambda, " (mean)"))) +
-  scale_shape_manual(name='Inference',values=c(16,3)) +
+  scale_shape_manual(name='Inference',values=c(4,3,16)) +
   theme_bw() + 
   coord_equal() +
   xlab('Easting (m)') + ylab('Northing (m)')
 
 g_lambda_hist = ggplot(df_sites_for_ipm_joined_summarized, aes(x=lambda.mean)) +
-  geom_histogram(binwidth = 0.01,fill='lightgray') +
+  geom_histogram(binwidth = 0.005,fill='#333333') +
   geom_vline(xintercept = 1,color='black') +
   theme_bw() +
   xlab(expression(paste(lambda, " (mean)"))) +
