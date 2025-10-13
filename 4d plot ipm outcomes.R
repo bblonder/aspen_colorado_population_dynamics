@@ -12,7 +12,7 @@ r_scenario_constant = rast('output_data/r_lambda_n_medium_constant_5.tif')
 r_scenario_midelevation = rast('output_data/r_lambda_n_medium_midelevation.tif')
 
 as.numeric(r_scenario_constant[] < 1) %>% table
-25018/(15948+25018)
+24976/(15926+24976)
 as.numeric(r_scenario_midelevation[] < 1) %>% table
 20866/(20036+20866)
 

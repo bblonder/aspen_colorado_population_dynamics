@@ -35,7 +35,8 @@ data_ploidy = read.csv('/Users/benjaminblonder/Documents/ASU/aspen remote sensin
 data_site = data_site %>%
   left_join(data_sex, by='site_code') %>%
   left_join(data_ploidy, by='site_code') %>%
-  mutate(Point_Type = ifelse(nchar(site_code)==4,'Grid','Random'))
+  mutate(Point_Type = ifelse(nchar(site_code)==4,'Grid','Random')) %>%
+  mutate(Point_Type_detailed = ifelse(nchar(site_code)>5,'Random-opportunistic','Other'))
 
 # distribution of ploidy level and sex
 data_site %>% select(site_code, Ploidy_level, Point_Type) %>% unique %>%
@@ -51,6 +52,16 @@ data_site %>% group_by(Point_Type) %>% summarize(quantile(n_medium_trees,0.95,na
 
 # how many plots total
 data_site %>% filter(Point_Type=='Random') %>% pull(site_code) %>% unique %>% length
+
+# how many plots per year
+data_site %>% select(site_code, year, Point_Type_detailed) %>% unique %>%
+  group_by(Point_Type_detailed, year) %>%
+  tally
+
+# any biases in un-called
+data_site %>% select(site_code, geneticSexID, Ploidy_level) %>% unique %>%
+  group_by(geneticSexID, Ploidy_level) %>%
+  tally
 
 
 # make map
