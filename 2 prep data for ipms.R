@@ -1,31 +1,24 @@
-# classes: small, medium, large5_10, large10_15, large15_20, large20_plus
-
-# estimate probability of new small or new medium as change in number of small per time per number of small, assume no mortality? or of the total, 2/3 new, ?
-
-
-
-
-# make separate transition probabilities for males, females
-# 
-# 
-# df_for_regression_full_surveys = df_for_regression %>% 
-#   filter(n_aspen_trees_surveyed==11)
-
-
-#library(IPMpack)
 library(dplyr)
 
 # get site-level info
+data_climate = read.csv('output_data/df_lagged_climate.csv')
 df_site_level = read.csv('data/aspen_data_site-level_2018-2023_v1allAspen_2024-11-27.csv')
 data_sex = read.csv('/Users/benjaminblonder/Documents/ASU/aspen remote sensing/aspen sex markers/aspen_sex_aug_11_2021.csv') %>%
   mutate(site_code = Site_Code) %>%
-  select(-Site_Code,-X.UTM,-Y.UTM)
-data_ploidy = read.csv('/Users/benjaminblonder/Documents/ASU/aspen remote sensing/2019/data analysis 2020/aspen data site-level processed 30 Mar 2020.csv') %>%
-  select(site_code=Site_Code,Ploidy_level,Cos.aspect,Elevation,Slope,X.UTM,Y.UTM,Watershed)
+  dplyr::select(-Site_Code,-X.UTM,-Y.UTM) %>%
+  mutate(geneticSexID=ifelse(is.na(geneticSexID),'unknown',geneticSexID))
+data_site_info = read.csv('/Users/benjaminblonder/Documents/ASU/aspen remote sensing/2019/data analysis 2020/aspen data site-level processed 30 Mar 2020.csv') %>%
+  dplyr::select(site_code=Site_Code,Cos.aspect,Elevation,Slope,X.UTM,Y.UTM,Watershed)
+data_ploidy_new = read.csv('/Users/benjaminblonder/Documents/berkeley/roxy cruz postdoc/aspen greenhouse/data analysis - best version with no exclusion bugs/00 update ploidy rmbl/data_rmbl_ploidy_updated_2025-12-04.csv') %>%
+  dplyr::rename(site_code=Site_Code)
 df_site_level = df_site_level %>%
   left_join(data_sex, by='site_code') %>%
-  left_join(data_ploidy, by='site_code') %>%
+  mutate(geneticSexID=as.character(factor(geneticSexID, levels=c('M','F'), labels = c('male','female')))) %>%
+  mutate(geneticSexID=ifelse(is.na(geneticSexID),'unknown',geneticSexID)) %>%
+  left_join(data_site_info, by='site_code') %>%
+  left_join(data_ploidy_new, by='site_code') %>%
   mutate(Point_Type = ifelse(nchar(site_code)==4,'Grid','Random'))
+
 
 
 
@@ -143,7 +136,7 @@ add_transition <- function(year_start, year_end, site_code_this)
                           sizeNext=df_end_tree$DBH,
                           surv=!died_end,
                           fec=0, # no sexual reproduction
-                          stage='continuous',
+                          stage='new_5_cm',
                           stageNext='continuous',
                           number=1,
                           damagedNext=damaged_end,
@@ -202,9 +195,10 @@ transitions_all$damaged %>% table
 transitions_all$surv %>% table
 
 
-# remove dodgy size transitions
+# remove dodgy size transitions that are too big
 transitions_all_filtered = transitions_all %>%
-  mutate(sizeNext = ifelse(abs(growth_rate) < 1.5,sizeNext,NA)) %>%
+  mutate(sizeNext = ifelse(abs(growth_rate) < 1,sizeNext,NA)) %>%
+  mutate(growth_rate = ifelse(abs(growth_rate) < 1,growth_rate,NA)) %>%
 # identify recruits as one that started at exactly 5 and did not grow much 
 # (maybe there is a better way, could flag these 
   mutate(recruit = (size==5 & sizeNext < 6))
@@ -216,43 +210,19 @@ transitions_all_filtered_joined = transitions_all_filtered %>%
                      Ploidy_level, geneticSexID, 
                      n_small_trees, n_medium_trees, 
                      Cos.aspect, Elevation,
-                     basal_area_density_live, plot_area_m2), 
-            by=join_by(site_code,year)) 
+                     basal_area_density_live, plot_area_m2,
+                     contains('STB'), contains('SWE')), 
+            by=join_by(site_code,year)) %>%
+  mutate(year_final = year + delta_years) %>%
+  select(year, year_final, delta_years, everything())
+
+# now add in the climate data merging on the final year 
+# (not sure how to best handle this transition)
+transitions_all_filtered_joined_with_climate_year_final = transitions_all_filtered_joined %>% 
+  left_join(data_climate %>% 
+              rename(year_final=year), 
+            by=c('site_code','year_final'))
 
 
-write.csv(transitions_all_filtered_joined, file='output_data/transitions_all_filtered_joined.csv')
+write.csv(transitions_all_filtered_joined_with_climate_year_final, file='output_data/transitions_all_filtered_joined_with_climate_year_final.csv',row.names=FALSE)
 
-
-  
-# 
-# 
-# growObj = makeGrowthObj(transitions_all_filtered)
-# survObj = makeSurvObj(transitions_all_filtered)
-# fecObj = makeFecObj(transitions_all_filtered)
-# 
-# Pmatrix = makeIPMPmatrix(minSize=5, maxSize=100, growObj = growObj, survObj = survObj)
-# Fmatrix = makeIPMFmatrix(minSize=5, maxSize=100, fecObj = fecObj)
-# 
-# fullMatrix = largeMatrixCalc(Pmatrix, Fmatrix)
-
-
-# # really no recruits??
-# df_tree_level %>% filter(DBH < 5.5 & tree_num>10) %>% View
-
-
-# 
-# # figure out which sites only had a 2018 and 2023 census
-# years_censused = df_tree_level %>% 
-#   group_by(site_code, year) %>% 
-#   tally %>% 
-#   pivot_wider(id_cols=site_code,names_from=year,values_from=n) %>%
-#   dplyr::select(site_code, `2018`,`2020`,`2023`) %>%
-#   mutate(only_five = is.na(`2020`) & !is.na(`2023`) & !is.na(`2018`))
-# 
-# 
-
-# add_transition(2018, 2023, "PHRAZ01")
-
-# add_transition(2018, 2020, "ERNAK")
-
-# only need to do the tagged trees, can use the small/medium to estimate the fecundity
