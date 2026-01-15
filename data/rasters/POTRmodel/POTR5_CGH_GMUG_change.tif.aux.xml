@@ -1,0 +1,33 @@
+<PAMDataset>
+  <Metadata domain="Esri">
+    <MDI key="PyramidResamplingType">NEAREST</MDI>
+  </Metadata>
+  <PAMRasterBand band="1">
+    <CategoryNames>
+      <Category>Never ever</Category>
+      <Category>Lost</Category>
+      <Category>Threatened</Category>
+      <Category>Persistent</Category>
+      <Category>Emergent</Category>
+      <Category>Water</Category>
+      <Category>Bare</Category>
+      <Category>Rock</Category>
+    </CategoryNames>
+    <Histograms>
+      <HistItem>
+        <HistMin>-0.4375</HistMin>
+        <HistMax>7.4375</HistMax>
+        <BucketCount>8</BucketCount>
+        <IncludeOutOfRange>0</IncludeOutOfRange>
+        <Approximate>0</Approximate>
+        <HistCounts>4189457|930467|1057591|150806|502123|29958|178139|143459</HistCounts>
+      </HistItem>
+    </Histograms>
+    <Metadata>
+      <MDI key="STATISTICS_MAXIMUM">7</MDI>
+      <MDI key="STATISTICS_MEAN">1.0762177666388</MDI>
+      <MDI key="STATISTICS_MINIMUM">0</MDI>
+      <MDI key="STATISTICS_STDDEV">1.6863907048741</MDI>
+    </Metadata>
+  </PAMRasterBand>
+</PAMDataset>

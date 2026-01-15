@@ -15,6 +15,7 @@ library(pbapply)
 # library(boot)
 library(insight)
 library(progress)
+library(Rage)
 
 #source('ipm parameters.R')
 NUM_RESAMPLES = 20
@@ -68,102 +69,143 @@ transitions_resampled = lapply(1:NUM_RESAMPLES, function(x) {
 
 
 # fit vital rate models
-formula_survival = formula(factor(surv) ~ delta_years + size * (Ploidy_level + Cos.aspect + Elevation + STB.0 + SWE.0) + population_density_m2)
-m_survival_all = glm(formula=formula_survival, 
-                 data = transitions_all_filtered_joined_no_na, 
+# transitions_all_filtered_joined_no_na_balanced = transitions_all_filtered_joined_no_na %>%
+#   group_by(Ploidy_level, geneticSexID) %>%
+#   sample_n(300, replace=TRUE)
+library(brglm2)
+formula_survival = formula(factor(surv) ~ size * (Ploidy_level + geneticSexID + Cos.aspect + Elevation + STB.0 + SWE.0 + STB.1 + SWE.1 + population_density_m2))
+# m_survival_all = glm(formula=formula_survival, 
+#                      data = transitions_all_filtered_joined_no_na, 
+#                      family = binomial(),
+#                      method='brglmFit',
+#                      weights=round(10*transitions_all_filtered_joined_no_na$weight))
+m_survival_all = glm(formula=formula_survival,
+                 data = transitions_all_filtered_joined_no_na,
                  family = binomial(),
                  weights=round(10*transitions_all_filtered_joined_no_na$weight))
-summary(m_survival_all)
- 
+# m_survival_all_reduced = m_survival_all
+m_survival_all_reduced = stepAIC(m_survival_all)
+summary(m_survival_all_reduced) 
+
 pdf(file='output_figures/g_ipm_survival.pdf',width=10,height=10)
-plot_model(m_survival_all, sort.est=TRUE) + 
+plot_model(m_survival_all_reduced, sort.est=TRUE) + 
   theme_bw() + 
   geom_hline(yintercept = 1) +
   ggtitle('survival, standardized effect')
-plot_model(m_survival_all, type='int')
-simulateResiduals(m_survival_all) %>% plot
+plot_model(m_survival_all_reduced, type='int')
+simulateResiduals(m_survival_all_reduced) %>% plot
 dev.off()
 
-tab_model(m_survival_all, file='output_figures/table_model_tree_level_survival.html')
+tab_model(m_survival_all_reduced, file='output_figures/table_model_tree_level_survival.html')
 
-Anova(m_survival_all,type=3)
+Anova(m_survival_all_reduced,type=3)
 
 
 
-formula_growth = formula(sizeNext ~ delta_years + size * (geneticSexID) + population_density_m2)
+formula_growth = formula(sizeNext ~ size * (Ploidy_level + geneticSexID + Cos.aspect + Elevation + STB.0 + SWE.0 + STB.1 + SWE.1 + population_density_m2))
 m_growth_all = glm(formula=formula_growth, 
-               data = transitions_all_filtered_joined_no_na,
+               data = transitions_all_filtered_joined_no_na %>% mutate(size2=size^2),
                weights=round(10*transitions_all_filtered_joined_no_na$weight))
-summary(m_growth_all)
-
-
-tab_model(m_growth_all, file='output_figures/table_model_tree_level_growth.html')
+m_growth_all_reduced = stepAIC(m_growth_all)
+summary(m_growth_all_reduced)
 
 
 pdf(file='output_figures/g_ipm_growth.pdf',width=10,height=10)
-plot_model(m_growth_all, type='est', sort.est=TRUE, rm.terms='size') + 
+plot_model(m_growth_all_reduced, type='est', sort.est=TRUE, rm.terms='size') + 
   theme_bw() + 
   geom_hline(yintercept = 0) +
   ggtitle('growth, standardized effect')
-plot_model(m_growth_all, type='int')
-simulateResiduals(m_growth_all) %>% plot
+plot_model(m_growth_all_reduced, type='int')
+simulateResiduals(m_growth_all_reduced) %>% plot
 dev.off()
 
-Anova(m_growth_all,type=3)
+tab_model(m_growth_all_reduced, file='output_figures/table_model_tree_level_growth.html')
+
+Anova(m_growth_all_reduced,type=3)
 
 
 
 
 counts_recruit_all = transitions_all_filtered_joined_no_na %>%
-  group_by(site_code, weight, delta_years, year, n_medium_trees, Ploidy_level, geneticSexID, Cos.aspect, Elevation, STB.0, SWE.0, population_density_m2) %>%
+  group_by(site_code, weight, delta_years, year, n_medium_trees, Ploidy_level, geneticSexID, Cos.aspect, Elevation, STB.0, SWE.0, STB.1, SWE.1, population_density_m2) %>%
   tally(recruit) %>%
-  mutate(log_ratio_n_med_per_pop_dens = log(1+n_medium_trees/population_density_m2)) %>%
+  mutate(log_one_plus_n_med_per_pop_dens = log(1+n_medium_trees/population_density_m2)) %>%
+  mutate(has_nonzero_n_med = n_medium_trees > 0) %>%
   as.data.frame
 
-formula_recruit_all = formula(n ~ delta_years + n_medium_trees + population_density_m2 + geneticSexID)
+formula_recruit_all = formula(n ~ n_medium_trees * (Ploidy_level + geneticSexID + Cos.aspect + Elevation + STB.0 + SWE.0 + STB.1 + SWE.1 + population_density_m2))
 
 m_recruit_count_all = glm(formula = formula_recruit_all,
                           data=counts_recruit_all,
                           family = poisson,
                           weights=round(10*counts_recruit_all$weight))
-summary(m_recruit_count_all)
+m_recruit_count_all_reduced = stepAIC(m_recruit_count_all)
+summary(m_recruit_count_all_reduced)
 
 pdf(file='output_figures/g_ipm_recruit_count.pdf',width=10,height=10)
-plot_model(m_recruit_count_all, sort.est=TRUE) + 
+plot_model(m_recruit_count_all_reduced, sort.est=TRUE) + 
   theme_bw() + 
   geom_hline(yintercept = 1) +
   ggtitle('recruit count, standardized effect')
-#plot_model(m_recruit_count_all, type='int')
-simulateResiduals(m_recruit_count_all) %>% plot
+plot_model(m_recruit_count_all_reduced, type='int')
+simulateResiduals(m_recruit_count_all_reduced) %>% plot
 dev.off()
 
-tab_model(m_recruit_count_all, file='output_figures/table_model_tree_level_recruit_count.html')
+tab_model(m_recruit_count_all_reduced, file='output_figures/table_model_tree_level_recruit_count.html')
 
-Anova(m_recruit_count_all,type=3)
+Anova(m_recruit_count_all_reduced,type=3)
 
 
 
 # this is effectively a no-intercept model for n_medium
-formula_n_medium = formula(log_ratio_n_med_per_pop_dens ~ Cos.aspect + Ploidy_level + population_density_m2)
-m_n_medium = glm(formula_n_medium, 
-                 family=gaussian,
-                 data=counts_recruit_all,
-                weights=round(10*counts_recruit_all$weight))
- 
-summary(m_n_medium)
+counts_recruit_all_nonzero = counts_recruit_all %>%
+  filter(has_nonzero_n_med==TRUE)
+
+formula_n_medium = formula(log_one_plus_n_med_per_pop_dens ~ (Ploidy_level + geneticSexID + Cos.aspect + Elevation + STB.0 + SWE.0 + STB.1 + SWE.1 + population_density_m2))
+m_n_medium_all = glm(formula_n_medium, 
+                 family=Gamma,
+                 data=counts_recruit_all_nonzero,
+                weights=round(10*counts_recruit_all_nonzero$weight))
+m_n_medium_all_reduced = stepAIC(m_n_medium_all)
+summary(m_n_medium_all_reduced)
 
 pdf(file='output_figures/g_ipm_n_medium.pdf',width=10,height=10)
-plot_model(m_n_medium, sort.est=TRUE) + 
+plot_model(m_n_medium_all_reduced, sort.est=TRUE) + 
   theme_bw() + 
   geom_hline(yintercept = 1) +
   ggtitle('n medium, standardized effect')
-#plot_model(m_recruit_count_all, type='int')
-simulateResiduals(m_n_medium) %>% plot
+try(plot_model(m_n_medium_all_reduced, type='int'))
+simulateResiduals(m_n_medium_all_reduced) %>% plot
 dev.off()
 
-tab_model(m_n_medium, file='output_figures/table_model_tree_level_n_medium.html')
+tab_model(m_n_medium_all_reduced, file='output_figures/table_model_tree_level_n_medium.html')
 
-Anova(m_n_medium,type=3)
+Anova(m_n_medium_all_reduced,type=3)
+
+
+
+formula_prob_medium = formula(has_nonzero_n_med ~ (Ploidy_level + geneticSexID + Cos.aspect + Elevation + STB.0 + SWE.0 + STB.1 + SWE.1 + population_density_m2))
+m_prob_medium_all = glm(formula_prob_medium, 
+                     family=binomial,
+                     data=counts_recruit_all,
+                     weights=round(10*counts_recruit_all$weight))
+m_prob_medium_all_reduced = stepAIC(m_prob_medium_all)
+summary(m_prob_medium_all)
+
+
+pdf(file='output_figures/g_ipm_prob_medium.pdf',width=10,height=10)
+plot_model(m_prob_medium_all_reduced, sort.est=TRUE) + 
+  theme_bw() + 
+  geom_hline(yintercept = 1) +
+  ggtitle('n medium, standardized effect')
+try(plot_model(m_prob_medium_all_reduced, type='int'))
+simulateResiduals(m_prob_medium_all_reduced) %>% plot
+dev.off()
+
+
+tab_model(m_prob_medium_all_reduced, file='output_figures/table_model_tree_level_prob_medium.html')
+
+Anova(m_prob_medium_all_reduced,type=3)
 
 
 # fit size residuals
@@ -197,25 +239,25 @@ Anova(m_growth_size_variance,type=3)
 
 
 
-Anova(m_survival_all,type=3) %>% 
+Anova(m_survival_all_reduced,type=3) %>% 
   as.data.frame %>% 
   dplyr::select(pvalue=`Pr(>Chisq)`) %>% 
   mutate(pvalue=format_p(pvalue,name=NULL)) %>%
   write.csv(file='output_figures/table_anova_survival_tree_level.csv',row.names=TRUE)
 
-Anova(m_growth_all,type=3) %>% 
+Anova(m_growth_all_reduced,type=3) %>% 
   as.data.frame %>% 
   dplyr::select(pvalue=`Pr(>Chisq)`) %>% 
   mutate(pvalue=format_p(pvalue,name=NULL)) %>%
   write.csv(file='output_figures/table_anova_growth_tree_level.csv',row.names=TRUE)
 
-Anova(m_recruit_count_all,type=3) %>% 
+Anova(m_recruit_count_all_reduced,type=3) %>% 
   as.data.frame %>% 
   dplyr::select(pvalue=`Pr(>Chisq)`) %>% 
   mutate(pvalue=format_p(pvalue,name=NULL)) %>%
   write.csv(file='output_figures/table_anova_survival_recruit_count_tree_level.csv',row.names=TRUE)
 
-Anova(m_n_medium,type=3) %>% 
+Anova(m_n_medium_all_reduced,type=3) %>% 
   as.data.frame %>% 
   dplyr::select(pvalue=`Pr(>Chisq)`) %>% 
   mutate(pvalue=format_p(pvalue,name=NULL)) %>%
@@ -229,14 +271,14 @@ Anova(m_growth_size_variance,type=3) %>%
 
 
 
-g_tree_level_rate_survival = plot(ggpredict(m_survival_all,terms=c('SWE.0','Ploidy_level')),colors=c('blue','red','gray')) + 
-  labs(color='Cytotype') + ggtitle('Probability of survival') + ylab('') + xlab('SWE.0')
-g_tree_level_rate_size = plot(ggpredict(m_growth_all,terms=c('size','geneticSexID')),colors=c('blue','red','gray')) + 
-  labs(color='Cytotype') + ggtitle('Size (cm)') + ylab('') + xlab('Size')
-g_tree_level_rate_recruit = plot(ggpredict(m_recruit_count_all,terms=c('n_medium_trees','geneticSexID')),colors=c('blue','red','gray')) + 
+g_tree_level_rate_survival = plot(ggpredict(m_survival_all_reduced,terms=c('Cos.aspect','Ploidy_level')),colors=c('blue','red','gray')) + 
+  labs(color='Cytotype') + ggtitle('Probability of survival') + ylab('') + xlab('Cos aspect')
+g_tree_level_rate_size = plot(ggpredict(m_growth_all_reduced,terms=c('Cos.aspect','Ploidy_level')),colors=c('blue','red','gray')) + 
+  labs(color='Cytotype') + ggtitle('Size (cm)') + ylab('') + xlab('Cos aspect')
+g_tree_level_rate_recruit = plot(ggpredict(m_recruit_count_all_reduced,terms=c('n_medium_trees','geneticSexID')),colors=c('blue','red','gray')) + 
   labs(color='Cytotype') + ggtitle('# recruits') + ylab('') + xlab('# medium trees')
-g_tree_level_rate_n_medium = plot(ggpredict(m_n_medium,terms=c('Cos.aspect','Ploidy_level')),colors=c('blue','red','gray')) + 
-  labs(color='Cytotype') + ggtitle('# medium trees (log x+1)') + ylab('') + xlab('Cos aspect')
+g_tree_level_rate_n_medium = plot(ggpredict(m_n_medium_all_reduced,terms=c('Elevation','Ploidy_level')),colors=c('blue','red','gray')) + 
+  labs(color='Cytotype') + ggtitle('log(1+# medium trees / population density)') + ylab('') + xlab('Elevation')
 
 g_tree_level_rates = ggarrange(g_tree_level_rate_survival, g_tree_level_rate_size, g_tree_level_rate_recruit, g_tree_level_rate_n_medium,
           nrow=2,ncol=2,common.legend = TRUE, legend='bottom',labels='AUTO')
@@ -375,13 +417,35 @@ plot_kernel <- function(minsize, maxsize, m, k, name)
 
 
 
+predict_n_medium <- function(current_conditions)
+{
+  # initial recruits set by regression
+  # hurdle model (binomial family)
+  coef_prob_medium = update_coefficients_full(coef(m_prob_medium_all_reduced), xvar='size', other_vars = current_conditions)
+  #print(coef_prob_medium)
+  prob_medium = exp(coef_prob_medium)/(1 + exp(coef_prob_medium))
+  if (prob_medium >= 0.5)
+  {
+    # gamma family, then need to 
+    mu = update_coefficients_full(coef(m_n_medium_all_reduced), xvar='size', other_vars = current_conditions)
+    # gamma link
+    mu_inv = 1/mu # this is the log(1+x/popdensity)
+    # invert the log(1+x/popdensity)
+    n_S = (exp(mu_inv)-1)*current_conditions$population_density_m2
+  }
+  else
+  {
+    n_S = 0
+  }
+  return(n_S)
+}
+
 
 run_model <- function(prefix_this='test',
                       minsize=5, # L
                       maxsize=60, # U
                       m=100, # mesh points
-                      n_iterations=20, # time steps
-                      n_S_initial=0, # initial # saplings
+                      n_iterations=100, # time steps
                       population_density_initial=0.1, # initial density
                       size_mean_initial = mean(transitions_all_filtered_joined_no_na$size, na.rm=TRUE), # initial tagged tree size distribution
                       size_sd_initial = sd(transitions_all_filtered_joined_no_na$size, na.rm=TRUE), # initial tagged tree size distribution
@@ -389,11 +453,10 @@ run_model <- function(prefix_this='test',
                       geneticSexIDmale='0',
                       Cos.aspect=-1,
                       Elevation=3000,
-                      STB.0=0,
-                      SWE.0=100,
-                      delta_years=3,
-                      ns_factor_density=1, # fudge factor to account for ns density effect
-                      ns_factor_survival=1 # fudge factor to account for ns survival effect
+                      STB.sequence=rep(0,n_iterations+1), # need one extra point for the time-1 lag
+                      SWE.sequence=rep(100, n_iterations+1), # need one extra point for the time-1 lag
+                      n_medium_factor=1#,
+                      #delta_years=3
 )
 {
   # conditions
@@ -403,10 +466,12 @@ run_model <- function(prefix_this='test',
                             geneticSexIDunknown='0',
                             Cos.aspect=Cos.aspect,
                             Elevation=Elevation,
-                            STB.0=STB.0,
-                            SWE.0=SWE.0,
-                            population_density_m2=population_density_initial, 
-                            delta_years=delta_years)
+                            STB.0=STB.sequence[1+1],
+                            SWE.0=SWE.sequence[1+1],
+                            STB.1=STB.sequence[1],
+                            SWE.1=SWE.sequence[1],
+                            population_density_m2=population_density_initial)#, 
+                            #delta_years=delta_years)
   
   # set up bins
   size_bins = seq(minsize, maxsize, length.out=m)
@@ -418,16 +483,17 @@ run_model <- function(prefix_this='test',
   # normalize the size to a population density of the requested value
   n_T = n_T * current_conditions$population_density_m2 / sum(n_T)
   
-  # initial recruits
+  # get intial number of recruits
+  n_S_initial = predict_n_medium(current_conditions)
   n_S = n_S_initial
+  print(n_S)
   
   # number of adult trees
   n_T_time_series = matrix(NA, nrow=n_iterations, ncol=m)
   # number of saplings
   n_S_time_series = rep(NA, n_iterations)
-  n_S_component_time_series = data.frame(matrix(NA, nrow=n_iterations, ncol=3))
-  names(n_S_component_time_series) = c('density','survival','progression')
-  
+  n_S_component_time_series = data.frame(matrix(NA, nrow=n_iterations, ncol=2))
+  names(n_S_component_time_series) = c('total','out')
   # kernel
   P_initial = NULL
   P_final = NULL
@@ -442,25 +508,29 @@ run_model <- function(prefix_this='test',
     # update population density
     current_conditions$population_density_m2 = sum(n_T)
     
+    # update environment
+    current_conditions$STB.0=STB.sequence[i+1]
+    current_conditions$SWE.0=SWE.sequence[i+1]
+    current_conditions$STB.1=STB.sequence[i]
+    current_conditions$SWE.1=SWE.sequence[i]
+    
     # get coefficients on link scale
     # binomial
-    coef_survival = update_coefficients_full(coef(m_survival_all), xvar='size', other_vars=current_conditions)
+    coef_survival = update_coefficients_full(coef(m_survival_all_reduced), xvar='size', other_vars=current_conditions)
     # gaussian
-    coef_growth = update_coefficients_full(coef(m_growth_all), xvar='size', other_vars=current_conditions)
+    coef_growth = update_coefficients_full(coef(m_growth_all_reduced), xvar='size', other_vars=current_conditions)
     # poisson
-    coef_recruit_count = update_coefficients_full(coef(m_recruit_count_all), xvar='n_medium_trees', other_vars=current_conditions)
+    coef_recruit_count = update_coefficients_full(coef(m_recruit_count_all_reduced), xvar='n_medium_trees', other_vars=current_conditions)
     # gamma
     coef_size_variance = as.numeric(coef(m_growth_size_variance))
-    # gaussian
-    coef_n_medium = update_coefficients_full(coef(m_n_medium), xvar='size', other_vars = current_conditions)
-    
-    #
+
+    # survival
     sx <- function(x) {
       xbeta = coef_survival[1] + x*coef_survival[2]
       mu = exp(xbeta)/(1 + exp(xbeta)) #
       return(mu)
     }
-    
+    # growth
     gxy<-function(x,y) {
       xbeta_sd <- coef_size_variance[1] + x*coef_size_variance[2]
       mu_sd = 1/xbeta_sd # gamma inv link
@@ -484,7 +554,7 @@ run_model <- function(prefix_this='test',
     
     bigmatrix<-function(n) {
       # upper and lower integration limits
-      L<-minsize; U<-maxsize; # i changed this! OK to integrate over this range only?
+      L<-minsize; U<-maxsize;
       
       # boundary points b and mesh points y
       b<-L+c(0:n)*(U-L)/n;
@@ -494,7 +564,6 @@ run_model <- function(prefix_this='test',
       # loop to construct the matrix
       M<-matrix(0,n,n);
       for (i in 1:n){
-        #cat(i);
         for(j in 1:n){
           M[i,j]<-Kyx(y[i],y[j])
         }
@@ -515,32 +584,25 @@ run_model <- function(prefix_this='test',
     }
   
     # iterate sapling trees
-    n_S_density_effect = (exp(coef_n_medium)-1)*sum(n_T)*ns_factor_density # gaussian link but need to back transform the log(x+1) and then multiply by pop density.
-    # define prior year recruit survival
-    # assume medium trees survive like 5 cm adults
-    n_S_survival_effect = sx(5)*n_S*ns_factor_survival # no link, check the 1 factor
-    n_S_progression_effect = exp(coef_recruit_count[1] + coef_recruit_count[2] * n_S) # poisson link
-  
-    n_S_next = n_S_density_effect + n_S_survival_effect - n_S_progression_effect
-    # hack - clamp this
-    if (n_S_next<0)
-    {
-      # hack!
-      # print('clamping nS at 0')
-      n_S_next = 0
-    }
+    # allow to be regulated by density dependence of adults alone
+    
+    n_S_total = predict_n_medium(current_conditions)*n_medium_factor # n_medium_factor is to account for browsing, etc.
+    n_S_next = n_S_total # gaussian link but need to back transform the log(x+1) and then multiply by pop density.
+    
+    # update this with the new n_S
+    # assume we can't progress more trees than we currently have
+    n_S_out = min(n_S_total, exp(coef_recruit_count[1] + coef_recruit_count[2] * n_S)) # poisson link
   
     # iterate tagged trees
-    n_T_next = P$matrix %*% n_T + P$h * c_R(P$meshpts) * n_S_progression_effect  
+    n_T_next = P$matrix %*% n_T + P$h * c_R(P$meshpts) * n_S_out  
     
     # store iterated value
     n_T = n_T_next
     n_S = n_S_next
     
     # this logging has to come here based on how i organized... (awkward)
-    n_S_component_time_series[i,'density'] = n_S_density_effect
-    n_S_component_time_series[i,'survival'] = n_S_survival_effect
-    n_S_component_time_series[i,'progression'] = n_S_progression_effect
+    n_S_component_time_series[i,'total'] = n_S_total
+    n_S_component_time_series[i,'out'] = n_S_out
     
     # save kernels
     if (i==1)
@@ -555,18 +617,10 @@ run_model <- function(prefix_this='test',
     pb$tick()
   }
   
-  # write out diagnostics
-  params_to_output = c(current_conditions, 
-                       minsize=minsize,
-                       maxsize=maxsize,
-                       n_iterations=n_iterations,
-                       size_mean_initial=size_mean_initial,
-                       size_sd_initial=size_sd_initial,
-                       n_S_initial = n_S_initial,
-                       population_density_initial=population_density_initial
-  )
-  params_to_output$population_density_m2 = NULL
-  
+  # compute statistics of final state
+  size_mean_final = sum(n_T_time_series[n_iterations,] * size_bins) / sum(n_T_time_series[n_iterations,])
+  #sx5_final = sx(5)
+  population_density_final = sum(n_T_time_series[n_iterations,])
   
   df_n_density = data.frame(time=1:nrow(n_T_time_series), value=apply(n_T_time_series, 1, sum),type='T') %>%
     rbind(data.frame(time=1:length(n_S_time_series),value=n_S_time_series,type='S'))
@@ -578,6 +632,54 @@ run_model <- function(prefix_this='test',
     mutate(time=row_number()) %>% 
     pivot_longer(!time) %>%
     mutate(size=as.numeric(name))
+  
+  n_T_final = df_n_density %>%
+    filter(time==n_iterations & type=='T') %>%
+    pull(value)  
+  n_S_final = df_n_density %>%
+    filter(time==n_iterations & type=='S') %>%
+    pull(value)
+  
+  longevity_90_initial = longevity(matU = P_initial, start = 1, lx_crit = 0.1)
+  longevity_90_final = longevity(matU = P_final, start = 1, lx_crit = 0.1)
+  
+  # write out diagnostics
+  params_to_output = c(current_conditions, 
+                       list(minsize=minsize,
+                       maxsize=maxsize,
+                       n_iterations=n_iterations,
+                       
+                       size_mean_initial=size_mean_initial,
+                       size_sd_initial=size_sd_initial,
+                       n_S_initial = n_S_initial,
+                       n_T_initial = population_density_initial,
+                       #longevity_95_initial = longevity_95_initial,
+                       
+                       size_mean_final=size_mean_final,
+                       #sx5_final = sx5_final,
+                       n_T_final = population_density_final,
+                       n_S_final=n_S_final,
+                       longevity_90_final = longevity_90_final)
+  )
+  # drop unnecessary columns for printing
+  params_to_output$population_density_m2 = NULL
+  params_to_output$geneticSexIDunknown = NULL
+  params_to_output$Ploidy_levelunknown = NULL
+  params_to_output$SWE.0 = NULL
+  params_to_output$SWE.1 = NULL
+  params_to_output$STB.0 = NULL
+  params_to_output$STB.1 = NULL
+  params_to_output$SWE.mean=mean(SWE.sequence)
+  params_to_output$STB.mean=mean(STB.sequence)
+  
+  # check for stability
+  m_nt_stable = lm(value~time, data=df_n_density %>% filter(type=='T') %>% tail(50))
+  # print(df_n_density %>% filter(type=='T')%>% tail(50))
+  # print(summary(m_nt_stable))
+  p_m_nt_stable = anova(m_nt_stable)$'Pr(>F)'[1]
+  coef_nt_stable = coef(m_nt_stable)[2]
+  params_to_output$p_m_nt_stable = p_m_nt_stable
+  params_to_output$coef_nt_stable = coef_nt_stable
   
   g1 = ggplot(df_nt, aes(x=size,y=value,color=time,group=time)) +
     geom_line() +
@@ -594,9 +696,9 @@ run_model <- function(prefix_this='test',
     ylab('Population density (# m^-2)') +
     scale_color_discrete(labels=c(S='S (medium saplings)',T='T (tagged trees)')) +
     xlab('Timestep') +
-    facet_wrap(~type,scales='free_y')
+    facet_wrap(~type,scales='free_y') +
     theme(legend.position = 'bottom')
-  
+
   g3 = ggplot(n_S_component_time_series %>%
                   mutate(time=row_number()) %>%
                   pivot_longer(!time), aes(x=time,y=value,color=name)) +
@@ -609,83 +711,146 @@ run_model <- function(prefix_this='test',
     theme_void() +
     annotate('text', x=0, y=0, label=t_this,size=3)
   
-  g_pi = plot_kernel(minsize, maxsize, m=m, k=P_initial,'P initial')
+  #g_pi = plot_kernel(minsize, maxsize, m=m, k=P_initial,'P initial')
   g_pf = plot_kernel(minsize, maxsize, m=m, k=P_final,'P final')
   
-  g_model = ggarrange(g1, g2, g3, g4, g_pi, g_pf, nrow=3, ncol=2)
+  df_env = rbind(data.frame(name='SWE',value=SWE.sequence) %>% mutate(time=1:nrow(.)),data.frame(name='STB',value=STB.sequence) %>% mutate(time=1:nrow(.)))
+  g_env = ggplot(df_env,
+                 aes(x=time,y=value)) + 
+    geom_line() +
+    facet_wrap(~name,scales='free_y') +
+    theme_bw()
+  
+  g_model = ggarrange(g1, g2, g3, g4, g_pf, g_env, nrow=3, ncol=2)
   ggsave(g_model, file=sprintf('output_figures/m_time_series_%s.pdf',prefix_this),width=12,height=12)
   
-  n_T_final = df_n_density %>%
-    filter(time==n_iterations & type=='T') %>%
-    pull(value)  
-  n_S_final = df_n_density %>%
-    filter(time==n_iterations & type=='S') %>%
-    pull(value)
-  
-  return(c(params_to_output, 
-           # add final abundances
-           n_S_final=n_S_final, 
-           n_T_final=n_T_final, 
-           # add key parameters (hack)
-           ns_factor_density=ns_factor_density, 
-           ns_factor_survival=ns_factor_survival))
+
+  return(list(P_initial=P_initial,
+              P_final=P_final,
+              size_bins=size_bins,
+              n_S = n_S_time_series,
+              n_T = n_T_time_series,
+           results=params_to_output))
 }
 
 # test run
-run_model(geneticSexIDmale = '0',
+model_output_test = run_model(geneticSexIDmale = '1',
           Ploidy_leveltriploid = '1',
-          n_S_initial = 1,
           Cos.aspect = 0,
+          n_medium_factor=1,
           prefix_this = 'test', 
-          ns_factor_density = 1,
-          ns_factor_survival = 1,
-          n_iterations = 500)
+          n_iterations = 200,
+          SWE.sequence=runif(min=100,max=100,n=1000+1),
+          STB.sequence=seq(1,1,length.out=1000+1))
 
 
+## test
+
+matR_this = matrix(0, nrow=nrow(model_output_test$P_initial), ncol=ncol(model_output_test$P_initial))
+size_bins = seq(5,60,length.out=nrow(model_output_test$P_initial))
+matR_this[,head(which(size_bins>30),1):ncol(matR_this)] = 1
+mature_age(matU=model_output_test$P_initial, matR=matR_this,start=1)
+
+# compare against actual growth trajectories
+with(transitions_all_filtered_joined_no_na, (sizeNext - size)/delta_years) %>% summary
+# seems reasonable
+# envelope calculation of # of timesteps (years/3) required to reach 30 cm from 5 cm
+(30-5)/0.15/3
+
+
+
+
+
+# run parameter sweep
 params = expand.grid(geneticSexIDmale=c("0","1"), 
                      Ploidy_leveltriploid=c("0","1"), 
-                     n_S_initial=c(1),
                      Cos.aspect=c(-1,1),
                      Elevation=c(2800,3200),
-                     #SWE.0=c(0,300),
+                     SWE=c(0,300),
+                     STB=c(-1,1),
                      #ns_factor_density=c(0,1),
                      n_iterations=500,
-                     m=100
+                     m=100,
+                     stringsAsFactors=FALSE
               )
 params$prefix_this=paste('test',1:nrow(params),sep='_')
 
 model_results = lapply(1:nrow(params), function(i) {
   cat(sprintf('%d %.3f\n',i, i/nrow(params)))
   
-  result = do.call("run_model",as.list(params[i,]))
-  return(as.data.frame(result))
+  params_this = as.list(params[i,])
+  # make environment sequence
+  params_this$SWE.sequence=rep(params_this$SWE,params_this$n_iterations+1)
+  params_this$STB.sequence=rep(params_this$STB,params_this$n_iterations+1)
+  # remove unneeded columns
+  params_this$SWE = NULL
+  params_this$STB = NULL
+  #print(params_this)
+  
+  result = do.call("run_model",params_this)
+  return(result)
 })
-model_results = do.call("rbind",model_results)
+model_results_df = do.call("rbind",lapply(model_results, function(x) {   return(as.data.frame(x$results)) }))
 
-write.csv(model_results, file='output_data/ipm_outcomes_parameter_sweep.csv', row.names = FALSE)
+# also get out final size distribution
+model_results_size = as.data.frame(do.call("rbind",lapply(model_results, function(x) {   return(tail(x$n_T,1)) })))
+names(model_results_size) = model_results[[1]]$size_bins
+model_results_size_df = model_results_size %>% 
+  mutate(row=row_number()) %>% 
+  mutate(stable=abs(model_results_df$coef_nt_stable) < 10^-5) %>%
+  pivot_longer(!c(row, stable)) %>% 
+  mutate(dbh_cm=as.numeric(name)) %>%
+  select(-name)
+
+
+ggplot(model_results_size_df , aes(x=dbh_cm,y=value, color=stable, group=row)) +
+  geom_line() +
+  theme_bw() +
+  scale_y_sqrt() +
+  theme(legend.position='none')
+
+write.csv(model_results_df, file='output_data/ipm_outcomes_parameter_sweep.csv', row.names = FALSE)
 
 # try some plotting
 
-ggplot(model_results, aes(x=geneticSexIDmale, color=Ploidy_leveltriploid,y=n_T_final)) +
-  geom_boxplot() +
+ggplot(model_results_df, aes(x=geneticSexIDmale, color=Ploidy_leveltriploid,y=n_T_final,shape=abs(coef_nt_stable) < 10^-5)) +
+  geom_boxplot(outlier.shape=NA) +
+  geom_jitter(position=position_jitterdodge()) + 
   theme_bw() +
-  facet_wrap(~Cos.aspect+Elevation,labeller = label_both) +
+  facet_grid(~Cos.aspect~SWE.mean,labeller = label_both) +
   ylab('Tagged tree density (# per m2)')
 
 ggplot(model_results, aes(x=geneticSexIDmale, color=Ploidy_leveltriploid,y=n_S_final)) +
-  geom_boxplot() +
+  geom_boxplot(outlier.shape=NA) +
+  geom_jitter(position=position_jitterdodge()) + 
   theme_bw() +
-  facet_wrap(~Cos.aspect+Elevation,labeller = label_both) +
+  facet_grid(~Cos.aspect~STB.mean,labeller = label_both) +
   ylab('Sapling density (# per 3 m subplot)')
 
-ggplot(model_results, aes(x=n_S_final,y=n_T_final)) +
+ggplot(model_results, aes(x=n_S_final,y=n_T_final,color=Ploidy_leveltriploid)) +
   geom_point() +
   theme_bw() +
-  facet_wrap(~Cos.aspect+Elevation,labeller = label_both) +
+  facet_grid(~Cos.aspect~STB.mean,labeller = label_both) +
   ylab('Tagged tree density (# per m2)') +
   xlab('Sapling density (# per 3 m subplot)')
 
 
+ggplot(model_results, aes(x=geneticSexIDmale, color=Ploidy_leveltriploid,y=2.5*longevity_95_final)) +
+  geom_boxplot() +
+  theme_bw() +
+  facet_grid(~Cos.aspect~STB.mean,labeller = label_both) +
+  ylab('Mean tagged tree longevity (years)')
+
+ggplot(model_results, aes(x=2.5*longevity_95_final,y=size_mean_final)) +
+  geom_point() + 
+  theme_bw() + 
+  ylab('Mean DBH (cm)') +
+  xlab('Mean tagged tree longevity (years)')
+
+# try other summary stats
+
+lm(n_T_final ~ Ploidy_leveltriploid + geneticSexIDmale + scale(Cos.aspect) + + scale(SWE.mean) + scale(STB.mean), #scale(Elevation) 
+   data=model_results)
 
 
 
