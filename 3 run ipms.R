@@ -1,6 +1,5 @@
 library(MASS)
 library(dplyr)
-library(ipmr)
 library(visreg)
 library(DHARMa)
 library(MuMIn)
@@ -11,14 +10,12 @@ library(tidyr)
 library(ggeffects)
 library(ggpubr)
 library(pbapply)
-# library(popbio)
-# library(boot)
 library(insight)
 library(progress)
 library(Rage)
 
 #source('ipm parameters.R')
-NUM_RESAMPLES = 20
+#NUM_RESAMPLES = 20
 
 set.seed(1) # reproducibility of resampling
 
@@ -63,9 +60,9 @@ transitions_all_filtered_joined_no_na = transitions_all_filtered_joined_no_na %>
 
 
 # get resampled dataset for bootstrapping
-transitions_resampled = lapply(1:NUM_RESAMPLES, function(x) { 
-  transitions_all_filtered_joined_no_na[sample(1:nrow(transitions_all_filtered_joined_no_na), size=nrow(transitions_all_filtered_joined_no_na), replace=TRUE),] 
-  })
+# transitions_resampled = lapply(1:NUM_RESAMPLES, function(x) { 
+#   transitions_all_filtered_joined_no_na[sample(1:nrow(transitions_all_filtered_joined_no_na), size=nrow(transitions_all_filtered_joined_no_na), replace=TRUE),] 
+#   })
 
 
 # fit vital rate models
@@ -130,7 +127,7 @@ counts_recruit_all = transitions_all_filtered_joined_no_na %>%
   group_by(site_code, weight, delta_years, year, n_medium_trees, Ploidy_level, geneticSexID, Cos.aspect, Elevation, STB.0, SWE.0, STB.1, SWE.1, population_density_m2) %>%
   tally(recruit) %>%
   mutate(log_one_plus_n_med_per_pop_dens = log(1+n_medium_trees/population_density_m2)) %>%
-  mutate(has_nonzero_n_med = n_medium_trees > 0) %>%
+  mutate(has_nonzero_n_med = factor(n_medium_trees > 0)) %>%
   as.data.frame
 
 formula_recruit_all = formula(n ~ n_medium_trees * (Ploidy_level + geneticSexID + Cos.aspect + Elevation + STB.0 + SWE.0 + STB.1 + SWE.1 + population_density_m2))
@@ -162,10 +159,14 @@ counts_recruit_all_nonzero = counts_recruit_all %>%
   filter(has_nonzero_n_med==TRUE)
 
 formula_n_medium = formula(log_one_plus_n_med_per_pop_dens ~ (Ploidy_level + geneticSexID + Cos.aspect + Elevation + STB.0 + SWE.0 + STB.1 + SWE.1 + population_density_m2))
-m_n_medium_all = glm(formula_n_medium, 
+m_n_medium_all = glm(formula_n_medium,
                  family=Gamma,
                  data=counts_recruit_all_nonzero,
                 weights=round(10*counts_recruit_all_nonzero$weight))
+# m_n_medium_all_nb = glm.nb(formula_n_medium,
+#               data=counts_recruit_all,
+#               weights=round(10*counts_recruit_all$weight))
+
 m_n_medium_all_reduced = stepAIC(m_n_medium_all)
 summary(m_n_medium_all_reduced)
 
@@ -184,7 +185,7 @@ Anova(m_n_medium_all_reduced,type=3)
 
 
 
-formula_prob_medium = formula(has_nonzero_n_med ~ (Ploidy_level + geneticSexID + Cos.aspect + Elevation + STB.0 + SWE.0 + STB.1 + SWE.1 + population_density_m2))
+formula_prob_medium = formula(has_nonzero_n_med ~ (Ploidy_level + geneticSexID + Cos.aspect + Elevation+ STB.0 + SWE.0 + STB.1 + SWE.1 + population_density_m2))
 m_prob_medium_all = glm(formula_prob_medium, 
                      family=binomial,
                      data=counts_recruit_all,
@@ -263,6 +264,12 @@ Anova(m_n_medium_all_reduced,type=3) %>%
   mutate(pvalue=format_p(pvalue,name=NULL)) %>%
   write.csv(file='output_figures/table_anova_n_medium_tree_level.csv',row.names=TRUE)
 
+Anova(m_prob_medium_all_reduced,type=3) %>% 
+  as.data.frame %>% 
+  dplyr::select(pvalue=`Pr(>Chisq)`) %>% 
+  mutate(pvalue=format_p(pvalue,name=NULL)) %>%
+  write.csv(file='output_figures/table_anova_prob_medium_tree_level.csv',row.names=TRUE)
+
 Anova(m_growth_size_variance,type=3) %>% 
   as.data.frame %>% 
   dplyr::select(pvalue=`Pr(>Chisq)`) %>% 
@@ -277,11 +284,13 @@ g_tree_level_rate_size = plot(ggpredict(m_growth_all_reduced,terms=c('Cos.aspect
   labs(color='Cytotype') + ggtitle('Size (cm)') + ylab('') + xlab('Cos aspect')
 g_tree_level_rate_recruit = plot(ggpredict(m_recruit_count_all_reduced,terms=c('n_medium_trees','geneticSexID')),colors=c('blue','red','gray')) + 
   labs(color='Cytotype') + ggtitle('# recruits') + ylab('') + xlab('# medium trees')
-g_tree_level_rate_n_medium = plot(ggpredict(m_n_medium_all_reduced,terms=c('Elevation','Ploidy_level')),colors=c('blue','red','gray')) + 
-  labs(color='Cytotype') + ggtitle('log(1+# medium trees / population density)') + ylab('') + xlab('Elevation')
+g_tree_level_rate_prob_medium = plot(ggpredict(m_prob_medium_all_reduced,terms=c('Cos.aspect','Ploidy_level')),colors=c('blue','red','gray')) + 
+  labs(color='Cytotype') + ggtitle('Prob of medium tree') + ylab('') + xlab('Cosine aspect')
+g_tree_level_rate_n_medium = plot(ggpredict(m_n_medium_all_reduced,terms=c('Cos.aspect'))) + 
+  labs(color='Cytotype') + ggtitle('log(1+# medium trees / population density)') + ylab('') + xlab('Cosine aspect')
 
-g_tree_level_rates = ggarrange(g_tree_level_rate_survival, g_tree_level_rate_size, g_tree_level_rate_recruit, g_tree_level_rate_n_medium,
-          nrow=2,ncol=2,common.legend = TRUE, legend='bottom',labels='AUTO')
+g_tree_level_rates = ggarrange(g_tree_level_rate_survival, g_tree_level_rate_size, g_tree_level_rate_recruit, g_tree_level_rate_prob_medium, g_tree_level_rate_n_medium,
+          nrow=3,ncol=2,common.legend = TRUE, legend='bottom',labels='AUTO')
 ggsave(g_tree_level_rates, file='output_figures/g_tree_level_rates.pdf',width=6,height=6)
 ggsave(g_tree_level_rates, file='output_figures/g_tree_level_rates.png',width=6,height=6)
 
@@ -446,24 +455,27 @@ run_model <- function(prefix_this='test',
                       maxsize=60, # U
                       m=100, # mesh points
                       n_iterations=100, # time steps
-                      population_density_initial=0.1, # initial density
+                      population_density_initial=0.2, # initial density
                       size_mean_initial = mean(transitions_all_filtered_joined_no_na$size, na.rm=TRUE), # initial tagged tree size distribution
                       size_sd_initial = sd(transitions_all_filtered_joined_no_na$size, na.rm=TRUE), # initial tagged tree size distribution
                       Ploidy_leveltriploid='1',
                       geneticSexIDmale='0',
+                      Ploidy_levelunknown='0',
+                      geneticSexIDunknown='0',
                       Cos.aspect=-1,
                       Elevation=3000,
                       STB.sequence=rep(0,n_iterations+1), # need one extra point for the time-1 lag
                       SWE.sequence=rep(100, n_iterations+1), # need one extra point for the time-1 lag
-                      n_medium_factor=1#,
+                      n_S_lag_factor = 0.2,
+                      n_S_base_level=0#,
                       #delta_years=3
 )
 {
   # conditions
   current_conditions = list(Ploidy_leveltriploid=Ploidy_leveltriploid,
                             geneticSexIDmale=geneticSexIDmale,
-                            Ploidy_levelunknown='0',
-                            geneticSexIDunknown='0',
+                            Ploidy_levelunknown=Ploidy_levelunknown,
+                            geneticSexIDunknown=geneticSexIDunknown,
                             Cos.aspect=Cos.aspect,
                             Elevation=Elevation,
                             STB.0=STB.sequence[1+1],
@@ -493,7 +505,7 @@ run_model <- function(prefix_this='test',
   # number of saplings
   n_S_time_series = rep(NA, n_iterations)
   n_S_component_time_series = data.frame(matrix(NA, nrow=n_iterations, ncol=2))
-  names(n_S_component_time_series) = c('total','out')
+  names(n_S_component_time_series) = c('total','recruits')
   # kernel
   P_initial = NULL
   P_final = NULL
@@ -586,15 +598,22 @@ run_model <- function(prefix_this='test',
     # iterate sapling trees
     # allow to be regulated by density dependence of adults alone
     
-    n_S_total = predict_n_medium(current_conditions)*n_medium_factor # n_medium_factor is to account for browsing, etc.
-    n_S_next = n_S_total # gaussian link but need to back transform the log(x+1) and then multiply by pop density.
+    n_S_total = predict_n_medium(current_conditions) # n_medium_factor is to account for browsing, etc.
+    # this is an experimental hack
+    if (n_S_total==0)
+    {
+      n_S_total = n_S_base_level
+    }
+    # introduce a lag factor to allow n_S to vary more smoothly
+    # experimental hack no evidence for this
+    n_S_next = (1-n_S_lag_factor)*n_S + n_S_lag_factor*n_S_total 
     
     # update this with the new n_S
     # assume we can't progress more trees than we currently have
-    n_S_out = min(n_S_total, exp(coef_recruit_count[1] + coef_recruit_count[2] * n_S)) # poisson link
+    n_recruits = min(n_S_total, exp(coef_recruit_count[1] + coef_recruit_count[2] * n_S)) # poisson link
   
     # iterate tagged trees
-    n_T_next = P$matrix %*% n_T + P$h * c_R(P$meshpts) * n_S_out  
+    n_T_next = P$matrix %*% n_T + P$h * c_R(P$meshpts) * n_recruits  
     
     # store iterated value
     n_T = n_T_next
@@ -602,7 +621,7 @@ run_model <- function(prefix_this='test',
     
     # this logging has to come here based on how i organized... (awkward)
     n_S_component_time_series[i,'total'] = n_S_total
-    n_S_component_time_series[i,'out'] = n_S_out
+    n_S_component_time_series[i,'recruits'] = n_recruits
     
     # save kernels
     if (i==1)
@@ -643,23 +662,36 @@ run_model <- function(prefix_this='test',
   longevity_90_initial = longevity(matU = P_initial, start = 1, lx_crit = 0.1)
   longevity_90_final = longevity(matU = P_final, start = 1, lx_crit = 0.1)
   
+  m_nt_stable = lm(value~time, data=df_n_density %>% filter(type=='T') %>% tail(10))
+  # print(df_n_density %>% filter(type=='T')%>% tail(50))
+  # print(summary(m_nt_stable))
+  p_m_nt_stable = anova(m_nt_stable)$'Pr(>F)'[1]
+  coef_nt_stable = as.numeric(coef(m_nt_stable)[2])
+  
+  # get density of 30 cm trees
+  n_T_final_temp = n_T_time_series[n_iterations,]
+  n_T_final_gt_30_cm = sum(n_T_final_temp[ which(size_bins>=30)])
+  
   # write out diagnostics
   params_to_output = c(current_conditions, 
                        list(minsize=minsize,
                        maxsize=maxsize,
                        n_iterations=n_iterations,
-                       
                        size_mean_initial=size_mean_initial,
                        size_sd_initial=size_sd_initial,
                        n_S_initial = n_S_initial,
                        n_T_initial = population_density_initial,
-                       #longevity_95_initial = longevity_95_initial,
-                       
                        size_mean_final=size_mean_final,
-                       #sx5_final = sx5_final,
                        n_T_final = population_density_final,
                        n_S_final=n_S_final,
-                       longevity_90_final = longevity_90_final)
+                       longevity_90_final = longevity_90_final,
+                       n_S_lag_factor=n_S_lag_factor,
+                       n_S_base_level=n_S_base_level,
+                       SWE.mean=mean(SWE.sequence),
+                       STB.mean=mean(STB.sequence),
+                       n_T_final_gt_30_cm=n_T_final_gt_30_cm,
+                       p_m_nt_stable=p_m_nt_stable,
+                       coef_nt_stable=coef_nt_stable)
   )
   # drop unnecessary columns for printing
   params_to_output$population_density_m2 = NULL
@@ -669,18 +701,9 @@ run_model <- function(prefix_this='test',
   params_to_output$SWE.1 = NULL
   params_to_output$STB.0 = NULL
   params_to_output$STB.1 = NULL
-  params_to_output$SWE.mean=mean(SWE.sequence)
-  params_to_output$STB.mean=mean(STB.sequence)
   
-  # check for stability
-  m_nt_stable = lm(value~time, data=df_n_density %>% filter(type=='T') %>% tail(50))
-  # print(df_n_density %>% filter(type=='T')%>% tail(50))
-  # print(summary(m_nt_stable))
-  p_m_nt_stable = anova(m_nt_stable)$'Pr(>F)'[1]
-  coef_nt_stable = coef(m_nt_stable)[2]
-  params_to_output$p_m_nt_stable = p_m_nt_stable
-  params_to_output$coef_nt_stable = coef_nt_stable
   
+  # make plots
   g1 = ggplot(df_nt, aes(x=size,y=value,color=time,group=time)) +
     geom_line() +
     theme_bw() + 
@@ -737,11 +760,28 @@ run_model <- function(prefix_this='test',
 model_output_test = run_model(geneticSexIDmale = '1',
           Ploidy_leveltriploid = '1',
           Cos.aspect = 0,
-          n_medium_factor=1,
+          Elevation=2800,
+          n_S_base_level = 1,
           prefix_this = 'test', 
           n_iterations = 200,
-          SWE.sequence=runif(min=100,max=100,n=1000+1),
-          STB.sequence=seq(1,1,length.out=1000+1))
+          SWE.sequence=rep(100,1000+1),
+          STB.sequence=rep(0,1000+1))
+
+model_output_test_stochastic = run_model(geneticSexIDmale = '1',
+                              Ploidy_leveltriploid = '1',
+                              Cos.aspect = 0,
+                              prefix_this = 'test_stochastic', 
+                              n_iterations = 200,
+                              SWE.sequence=runif(200+1,50,150),
+                              STB.sequence=runif(200+1,-0.25,0.25))
+
+model_output_test_drought = run_model(geneticSexIDmale = '1',
+                              Ploidy_leveltriploid = '1',
+                              Cos.aspect = 0,
+                              prefix_this = 'test_drought', 
+                              n_iterations = 1000,
+                              SWE.sequence=seq(200,0,length.out=1000+1),
+                              STB.sequence=seq(0.5,-0.5,length.out=1000+1))
 
 
 ## test
@@ -768,11 +808,11 @@ params = expand.grid(geneticSexIDmale=c("0","1"),
                      Elevation=c(2800,3200),
                      SWE=c(0,300),
                      STB=c(-1,1),
-                     #ns_factor_density=c(0,1),
-                     n_iterations=500,
-                     m=100,
+                     #n_S_base_level=c(0,0.5),
+                     n_iterations=100,
                      stringsAsFactors=FALSE
               )
+print(nrow(params))
 params$prefix_this=paste('test',1:nrow(params),sep='_')
 
 model_results = lapply(1:nrow(params), function(i) {
@@ -792,66 +832,208 @@ model_results = lapply(1:nrow(params), function(i) {
 })
 model_results_df = do.call("rbind",lapply(model_results, function(x) {   return(as.data.frame(x$results)) }))
 
+
+write.csv(model_results_df, file='output_data/ipm_outcomes_parameter_sweep.csv', row.names = FALSE)
+
+
 # also get out final size distribution
 model_results_size = as.data.frame(do.call("rbind",lapply(model_results, function(x) {   return(tail(x$n_T,1)) })))
 names(model_results_size) = model_results[[1]]$size_bins
 model_results_size_df = model_results_size %>% 
   mutate(row=row_number()) %>% 
-  mutate(stable=abs(model_results_df$coef_nt_stable) < 10^-5) %>%
+  mutate(stable=abs(model_results_df$coef_nt_stable) < 10^-3) %>%
   pivot_longer(!c(row, stable)) %>% 
   mutate(dbh_cm=as.numeric(name)) %>%
   select(-name)
+
+write.csv(model_results_size_df, file='output_data/ipm_outcomes_parameter_sweep_size_distribution.csv', row.names = FALSE)
+
+
+# try some plotting
+# slope changes
+ggplot(model_results_df, aes(x=coef_nt_stable)) +
+  geom_histogram(binwidth=0.0002) +
+  facet_grid(Ploidy_leveltriploid~geneticSexIDmale,labeller = label_both) +
+  theme_bw()
+
+
+ggplot(model_results_df, aes(x=n_T_final_gt_30_cm)) +
+  geom_histogram(binwidth=0.01) +
+  facet_grid(Ploidy_leveltriploid~geneticSexIDmale,labeller = label_both) +
+  theme_bw()
 
 
 ggplot(model_results_size_df , aes(x=dbh_cm,y=value, color=stable, group=row)) +
   geom_line() +
   theme_bw() +
-  scale_y_sqrt() +
-  theme(legend.position='none')
+  facet_wrap(~stable) +
+  scale_y_sqrt()
 
-write.csv(model_results_df, file='output_data/ipm_outcomes_parameter_sweep.csv', row.names = FALSE)
 
-# try some plotting
 
-ggplot(model_results_df, aes(x=geneticSexIDmale, color=Ploidy_leveltriploid,y=n_T_final,shape=abs(coef_nt_stable) < 10^-5)) +
+ggplot(model_results_df, aes(x=geneticSexIDmale, color=Ploidy_leveltriploid,y=n_T_final,shape=abs(coef_nt_stable) < 10^-4)) +
   geom_boxplot(outlier.shape=NA) +
   geom_jitter(position=position_jitterdodge()) + 
   theme_bw() +
-  facet_grid(~Cos.aspect~SWE.mean,labeller = label_both) +
+  facet_grid(Cos.aspect~SWE.mean,labeller = label_both) +
   ylab('Tagged tree density (# per m2)')
 
-ggplot(model_results, aes(x=geneticSexIDmale, color=Ploidy_leveltriploid,y=n_S_final)) +
+ggplot(model_results_df, aes(x=geneticSexIDmale, color=Ploidy_leveltriploid,y=n_S_final)) +
   geom_boxplot(outlier.shape=NA) +
   geom_jitter(position=position_jitterdodge()) + 
   theme_bw() +
-  facet_grid(~Cos.aspect~STB.mean,labeller = label_both) +
+  facet_grid(Cos.aspect~STB.mean,labeller = label_both) +
   ylab('Sapling density (# per 3 m subplot)')
 
-ggplot(model_results, aes(x=n_S_final,y=n_T_final,color=Ploidy_leveltriploid)) +
+ggplot(model_results_df, aes(x=n_S_final,y=n_T_final,color=Ploidy_leveltriploid)) +
   geom_point() +
   theme_bw() +
-  facet_grid(~Cos.aspect~STB.mean,labeller = label_both) +
+  facet_grid(Cos.aspect~STB.mean,labeller = label_both) +
   ylab('Tagged tree density (# per m2)') +
   xlab('Sapling density (# per 3 m subplot)')
 
 
-ggplot(model_results, aes(x=geneticSexIDmale, color=Ploidy_leveltriploid,y=2.5*longevity_95_final)) +
+ggplot(model_results_df, aes(x=geneticSexIDmale, color=Ploidy_leveltriploid,y=2.5*longevity_90_final)) +
   geom_boxplot() +
+  geom_jitter(position=position_jitterdodge()) + 
   theme_bw() +
-  facet_grid(~Cos.aspect~STB.mean,labeller = label_both) +
+  facet_grid(Cos.aspect~STB.mean,labeller = label_both) +
   ylab('Mean tagged tree longevity (years)')
 
-ggplot(model_results, aes(x=2.5*longevity_95_final,y=size_mean_final)) +
+ggplot(model_results_df, aes(x=2.5*longevity_90_final,y=size_mean_final)) +
   geom_point() + 
   theme_bw() + 
   ylab('Mean DBH (cm)') +
   xlab('Mean tagged tree longevity (years)')
 
+
+# compare observed and predicted outcomes
+# not quite a fair fight because predicted is a parameter sweep, the observed is for plots...
+df_n_comparison = rbind(rbind(data.frame(type='predicted',name='n_T',value=model_results_df$n_T_final), 
+data.frame(type='observed',name='n_T',value=counts_recruit_all$population_density_m2)),
+rbind(data.frame(type='predicted',name='n_S',value=model_results_df$n_S_final), 
+                          data.frame(type='observed',name='n_S',value=counts_recruit_all$n_medium_trees)))
+ggplot(df_n_comparison, aes(x=value,color=type)) + 
+  geom_density() +
+  facet_wrap(~name,scales='free') +
+  theme_bw()
+
+
+
+
 # try other summary stats
 
-lm(n_T_final ~ Ploidy_leveltriploid + geneticSexIDmale + scale(Cos.aspect) + + scale(SWE.mean) + scale(STB.mean), #scale(Elevation) 
-   data=model_results)
+m_summary_n_T_final = lm(n_T_final ~ Ploidy_leveltriploid + geneticSexIDmale + Cos.aspect + Elevation + SWE.mean + STB.mean,
+   data=model_results_df)
 
+m_summary_n_S_final = lm(n_S_final ~ Ploidy_leveltriploid + geneticSexIDmale + Cos.aspect + Elevation + SWE.mean + STB.mean,
+                         data=model_results_df)
+
+plot_model(m_summary_n_T_final,type='std') +
+  theme_bw() +
+  geom_hline(yintercept = 0) +
+  ylab('Standardized effect')
+
+plot_model(m_summary_n_S_final,type='std') +
+  theme_bw() +
+  geom_hline(yintercept = 0) +
+  ylab('Standardized effect')
+
+
+
+# load in climate data
+df_climate = read.csv('output_data/df_climate.csv')
+df_climate_summary_SWE= df_climate %>% 
+                        group_by(site_code, metric) %>%
+                        filter(metric=='SWE') %>%
+  # only a few values are lost
+                        filter(value>0) %>%
+                        reframe(t(fitdistr(value,'lognormal')$estimate) %>% as.data.frame) %>%
+  select(-metric) %>%
+  rename(SWE.meanlog=meanlog,SWE.sdlog=sdlog)
+
+df_climate_summary_STB = df_climate %>% 
+  group_by(site_code, metric) %>%
+  filter(metric=='STB') %>%
+  reframe(t(fitdistr(value,'normal')$estimate) %>% as.data.frame) %>%
+  select(-metric) %>%
+  rename(STB.mean=mean,STB.sd=sd)
+
+
+# run across all sites
+df_sites_for_ipm = transitions_all_filtered_joined_no_na %>%
+  left_join(df_climate_summary_SWE, by='site_code') %>%
+  left_join(df_climate_summary_STB, by='site_code') %>%
+  filter(site_type!='grid') %>%
+  # rename a few things to standardize with the IPM code
+  select(geneticSexID, Ploidy_level, Cos.aspect, Elevation,
+         STB.mean, STB.sd, SWE.meanlog, SWE.sdlog,
+         population_density_initial = population_density_m2, 
+         prefix_this = site_code,
+         size_mean, size_sd,
+         #n_S_initial = n_medium_trees, # not currently used
+         site_type,
+         year) %>%
+  group_by(prefix_this) %>%
+  # get plot in most recent year
+  slice_max(year) %>%
+  unique %>%
+  mutate(n_iterations=200) %>%
+  # rename columns for the script
+  mutate(geneticSexIDmale=as.character(as.numeric((geneticSexID=='male'))),
+         Ploidy_leveltriploid=as.character(as.numeric((Ploidy_level=='triploid'))),
+         geneticSexIDunknown=as.character(as.numeric((geneticSexID=='unknown'))),
+         Ploidy_levelunknown=as.character(as.numeric((Ploidy_level=='unknown')))) %>%
+  select(-geneticSexID, -Ploidy_level)
+
+# try to map out all the sites
+# 
+ipms_rmbl_sites = lapply(1:nrow(df_sites_for_ipm), function(i)
+{
+  cat(sprintf('%d %.3f\n',i, i/nrow(df_sites_for_ipm)))
+  params_this = as.list(df_sites_for_ipm[i,])
+  # make environment sequence
+  params_this$SWE.sequence=rlnorm(n=params_this$n_iterations+1, meanlog=params_this$SWE.meanlog, sdlog=params_this$SWE.sdlog)
+  params_this$STB.sequence=rnorm(n=params_this$n_iterations+1, mean=params_this$STB.mean, sd=params_this$STB.sd)
+  # remove unneeded columns
+  params_this$SWE.meanlog = NULL
+  params_this$SWE.sdlog = NULL
+  params_this$STB.mean = NULL
+  params_this$STB.sd = NULL
+  params_this$year = NULL
+  params_this$site_type = NULL
+  params_this$site_code = NULL
+  #print(params_this)
+  
+  result = do.call("run_model",params_this)
+  
+  return(result)
+})
+
+#write.csv(age_structure_sites_all, file='output_data/sites_age_structure.csv', row.names = FALSE)
+
+
+df_site_level = read.csv('/Users/benjaminblonder/Documents/ASU/aspen remote sensing/2019/data analysis 2020/aspen data site-level processed 30 Mar 2020.csv')
+df_sites_for_ipm_joined = df_sites_for_ipm %>%
+  left_join(df_site_level %>% 
+              select(site_code=Site_Code, X.UTM, Y.UTM, Watershed, 
+                     Elevation, Slope, 
+                     Canopy_openness,
+                     Summer.Insolation, Soil.type), by='site_code')# %>%
+#mutate(lambda_binned = cut(lambda, breaks=c(0,0.99,1.01,Inf),labels=c('decreasing','stable','increasing')))
+
+# df_sites_for_ipm_joined$dbh_modal = dbh_range[apply(age_structure_sites_all, 1, function(x) { 
+#   result = which.max(x)
+#   if (length(result)==0)
+#   {
+#     result = NA
+#   }
+#   return(result)
+#   })]
+
+write.csv(df_sites_for_ipm_joined, file='output_data/ipm_outcomes_lambda_by_plot.csv', row.names = FALSE)
+
+df_sites_for_ipm_joined = read.csv('output_data/ipm_outcomes_lambda_by_plot.csv')
 
 
 
