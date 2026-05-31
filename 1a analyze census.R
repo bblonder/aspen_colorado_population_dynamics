@@ -123,7 +123,7 @@ g_map_inset = ggplot() +
   annotation_scale() +
   annotation_north_arrow(location='br') +
   geom_sf(data=coords, mapping=aes(color=Ploidy_level,shape=geneticSexID),size=0.5) + 
-  scale_color_manual(values=c('blue','red','gray'),na.value = 'gray',name='Cytotype') + 
+  scale_color_manual(values=c('blue','red','gray'),na.value = 'gray',name='Ploidy level') + 
   scale_shape_discrete(name='Sex',na.value=3)
 
 
@@ -151,26 +151,24 @@ ggsave(g_map_final, file='output_figures/FIG1_map.png',width=6,height=6)
 hill_single_trimmed = crop(hill_single,st_bbox(st_buffer(coords, dist=500))) 
 
 # make SI maps of remotely sensed predictor layers
-r_sex = rast('/Users/benjaminblonder/Documents/ASU/aspen remote sensing/aspen sex markers/aspen_sex_prediction_20250110.tif')
-r_sex_downsampled = crop(aggregate(r_sex,5,fun='median',na.rm=TRUE), st_bbox(st_buffer(coords, dist=500))) - 1 # shift from 1 2 to 0 1 classification
-warning('levels may be backwards')
-levels(r_sex_downsampled) = c('male','female')
+r_sex = rast('data/rasters/CRBU_2018_mosaic_sex_masked.tif')
+r_sex_downsampled = crop(aggregate(r_sex,5,fun='median',na.rm=TRUE), st_bbox(st_buffer(coords, dist=500)))
+levels(r_sex_downsampled) = data.frame(id=c(0,1),sex=c('male','female')) # 1=female
 
-r_ploidy_level = rast('/Users/benjaminblonder/Documents/ASU/aspen remote sensing/2019/spectra analysis neon aop/cytotype analysis/layers/min_phase_cytotype_medfilt-seived.tif')
-crs(r_ploidy_level) = crs(hill_single)
-r_ploidy_level[r_ploidy_level==-1] = NA # all 0 and 1
+r_ploidy_level = rast('data/rasters/CRBU_2018_mosaic_ploidy_masked.tif')
 r_ploidy_level_downsampled = crop(aggregate(r_ploidy_level,5,fun='median',na.rm=TRUE), st_bbox(st_buffer(coords, dist=500)))
-levels(r_ploidy_level_downsampled) = c('triploid','diploid')
+levels(r_ploidy_level_downsampled) = data.frame(id=c(0,1),cytotype=c('triploid','diploid'))
 
 g_sex = ggplot() + 
   theme_bw() + 
   geom_stars(data=st_as_stars(hill_single_trimmed),show.legend=FALSE,alpha=0.5) +
   scale_fill_distiller(palette = "Greys") +
   new_scale_fill() +
-  geom_stars(data=st_as_stars(r_sex_downsampled)) +
-  scale_fill_manual(values=c('purple','green'),name='Sex',na.value=NA) +
+  geom_stars(data=st_as_stars(r_sex_downsampled),alpha=0.75) +
+  scale_fill_manual(values=c('purple3','green4'),name='Sex',na.value=NA) +
   annotation_scale() +
   annotation_north_arrow(location='br') +
+  coord_sf() + 
   xlab("Easting (m)") + ylab("Northing (m)")
 
 g_cytotype = ggplot() + 
@@ -178,10 +176,11 @@ g_cytotype = ggplot() +
   geom_stars(data=st_as_stars(hill_single_trimmed),show.legend=FALSE,alpha=0.5) +
   scale_fill_distiller(palette = "Greys") +
   new_scale_fill() +
-  geom_stars(data=st_as_stars(r_ploidy_level_downsampled)) +
+  geom_stars(data=st_as_stars(r_ploidy_level_downsampled),alpha=0.75) +
   scale_fill_manual(values=c('red','blue'),name='Cytotype',na.value=NA) +
   annotation_scale() +
   annotation_north_arrow(location='br') +
+  coord_sf() + 
   xlab("Easting (m)") + ylab("Northing (m)")
 
 ggsave(ggarrange(g_cytotype, g_sex, labels='AUTO',nrow=2,ncol=1),width=5,height=8, file='output_figures/g_sex_cytotype.png')
@@ -483,7 +482,7 @@ plot_pca <- function(pca_this, data_this, name)
     theme_bw() +
     coord_equal() +
     scale_color_viridis_d(name='Year') +
-    geom_polygon(data=pca_this$x[ch_indices,], inherit.aes = FALSE, mapping=aes(x=PC1,y=PC2),fill=NA,color='#AAAAAAAA') +
+    geom_polygon(data=pca_this$x[ch_indices,], inherit.aes = FALSE, mapping=aes(x=PC1,y=PC2),fill=NA,color='gray20') +
     theme(legend.position='bottom') +
     xlab(sprintf("PC1 (%.1f%%)",variance_fraction[1])) + ylab(sprintf("PC2 (%.1f%%)",variance_fraction[2]))
   
@@ -493,6 +492,8 @@ plot_pca <- function(pca_this, data_this, name)
   g_pca_loadings = ggplot(pca_this$rotation %>% 
                             as.data.frame %>% 
                             mutate(var=sapply(sapply(gsub("_"," ", row.names(.)),strwrap,width=20),paste,collapse='\n'))) +
+    geom_hline(yintercept = 0) +
+    geom_vline(xintercept = 0) +
     geom_segment(aes(x = 0, y = 0, xend = PC1, yend = PC2),arrow = arrow(length = unit(0.1, "inches")),color='gray') +
     geom_label_repel(aes(x=PC1*1.1, y=PC2*1.1, label=var),size=3,alpha=0.5) +
     theme_bw() +
@@ -514,7 +515,8 @@ data_pca_all = data_site_with_growth_for_pca %>%
   filter(Point_Type=='Random') %>%
   select(site_code, year, Ploidy_level, geneticSexID, 
          #Cos.aspect, Elevation, Slope,
-         n_small_trees, n_medium_trees, 
+         n_small = n_small_trees, 
+         n_medium = n_medium_trees, 
          dbh_mean_live,
          basal_area_density_live,
          frac_adult_dead_w_background_mortality_estimate,
@@ -526,14 +528,14 @@ data_pca_all = data_site_with_growth_for_pca %>%
   )
 
 rows_na_pca_full = data_pca_all %>%
-  select(n_small_trees:growth_rate) %>%
+  select(n_small:growth_rate) %>%
   rowSums %>%
   is.na
 
 data_pca_all = data_pca_all[which(!rows_na_pca_full),]
 
 pca_all = prcomp(data_pca_all %>%
-                   select(n_small_trees:growth_rate),
+                   select(n_small:growth_rate),
                  center=TRUE, scale=TRUE)
 
 plot_pca(pca_all, data_pca_all, 'all_vars')
@@ -542,39 +544,9 @@ plot_pca(pca_all, data_pca_all, 'all_vars')
 
 
 
-data_pca_reduced = data_site_with_growth_for_pca %>% 
-  filter(Point_Type=='Random') %>%
-  filter(!is.na(Ploidy_level) & !is.na(geneticSexID)) %>%
-  select(site_code, year, Ploidy_level, geneticSexID, 
-         #Cos.aspect, Elevation, Slope,
-         #n_small_trees, 
-         n_medium_trees, 
-         dbh_mean_live,
-         #basal_area_density_live,
-         frac_adult_dead_w_background_mortality_estimate,
-         #frac_adult_damaged,
-         growth_rate#,
-         # n_small_dead,
-         # n_medium_dead,
-         # n_dead_down
-  )
-
-rows_na_pca_reduced = data_pca_reduced %>%
-  select(n_medium_trees:growth_rate) %>%
-  rowSums %>%
-  is.na
-
-data_pca_reduced = data_pca_reduced[which(!rows_na_pca_reduced),]
-
-# this is the model we use in the manuscript
-pca_reduced = prcomp(data_pca_reduced %>%
-                   select(n_medium_trees:growth_rate),
-                 center=TRUE, scale=TRUE)
-
-plot_pca(pca_reduced, data_pca_reduced, 'reduced_vars')
 
 
-with(pca_reduced, 100*(sdev^2)/sum(sdev^2))
+with(pca_all, 100*(sdev^2)/sum(sdev^2))
 
 
 
@@ -716,7 +688,7 @@ show_ggpredict <- function(model, zi)
 
 gp1 = show_ggpredict(results_size$model, zi=FALSE) + ylab('DBH mean (cm)')
 gp2 = show_ggpredict(results_frac_dead$model, zi=FALSE) + ylab('Fraction adult dead')
-gp3 = show_ggpredict(results_n_medium$model, zi=FALSE) + ylab('Number medium saplings') + scale_y_sqrt()
+gp3 = show_ggpredict(results_n_medium$model, zi=FALSE) + ylab('Number medium stems') + scale_y_sqrt()
 
 
 g_plot_level = ggarrange(gp1, gp2, gp3,
