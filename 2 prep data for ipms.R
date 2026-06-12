@@ -210,8 +210,7 @@ transitions_all_filtered_joined = transitions_all_filtered %>%
                      Ploidy_level, geneticSexID, 
                      n_small_trees, n_medium_trees, 
                      Cos.aspect, Elevation,
-                     basal_area_density_live, plot_area_m2,
-                     contains('STB'), contains('SWE')), 
+                     basal_area_density_live, plot_area_m2), 
             by=join_by(site_code,year)) %>%
   mutate(year_final = year + delta_years) %>%
   select(year, year_final, delta_years, everything())

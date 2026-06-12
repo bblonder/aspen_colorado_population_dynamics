@@ -754,21 +754,36 @@ r_swe = rast(fn_swe)
 r_swe_projected = project(r_swe, aggregate(r_sex, 20))
 names(r_swe_projected) = paste(2016:2023)
 
+fn_tmax = dir(path='data/rasters/',pattern='_tmax_',full.names = TRUE)
+r_tmax = rast(fn_tmax)
+r_tmax_projected = project(r_tmax, aggregate(r_sex, 20))
+names(r_tmax_projected) = paste(2016:2023)
 
-plots_stb = lapply(r_stb_projected, function(r) {
+
+plots_stb = lapply(r_stb_projected - mean(r_stb_projected), function(r) {
   ggplot() + 
     geom_stars(data=st_as_stars(r)) +
-    scale_fill_gradient2(name='Drought STB (August)',limits=c(-2,2)) +
+    scale_fill_gradient2(name='Detrended STB (August)',limits=c(-2,2)) +
     annotation_scale() +
     theme_void() + 
     ggtitle(names(r)) +
     coord_equal()
 })
 
-plots_swe = lapply(r_swe_projected, function(r) {
+plots_swe = lapply(r_swe_projected - mean(r_swe_projected), function(r) {
   ggplot() + 
     geom_stars(data=st_as_stars(r)) +
-    scale_fill_gradient(name='SWE (May-June)') +
+    scale_fill_gradient2(name='Detrended SWE (May-June)',limits=c(-500,500)) +
+    annotation_scale() +
+    theme_void() + 
+    ggtitle(names(r)) +
+    coord_equal()
+})
+
+plots_tmax = lapply(r_tmax_projected - mean(r_tmax_projected), function(r) {
+  ggplot() + 
+    geom_stars(data=st_as_stars(r)) +
+    scale_fill_gradient2(name='Detrended mean Tmax (June - August)',limits=c(-2.5,2.5)) +
     annotation_scale() +
     theme_void() + 
     ggtitle(names(r)) +
@@ -777,6 +792,8 @@ plots_swe = lapply(r_swe_projected, function(r) {
 
 g_plot_stb = ggarrange(plotlist=plots_stb,nrow=1,common.legend = TRUE,legend='bottom')
 g_plot_swe = ggarrange(plotlist=plots_swe,nrow=1,common.legend = TRUE,legend='bottom')
+g_plot_tmax = ggarrange(plotlist=plots_tmax,nrow=1,common.legend = TRUE,legend='bottom')
 
-ggsave(ggarrange(g_plot_stb, g_plot_swe, nrow=2,labels='AUTO'), file=sprintf('output_figures/g_swe_stb_%s.pdf', PREFIX_TYPE),width=7,height=4.5)
-ggsave(ggarrange(g_plot_stb, g_plot_swe, nrow=2,labels='AUTO'), file=sprintf('output_figures/g_swe_stb_%s.png', PREFIX_TYPE),width=7,height=4.5)
+#g_plot_stb, 
+ggsave(ggarrange(g_plot_swe, g_plot_tmax, nrow=2,labels='AUTO'), file=sprintf('output_figures/g_climate_rasters_%s.pdf', PREFIX_TYPE),width=7,height=4.5)
+ggsave(ggarrange(g_plot_swe, g_plot_tmax, nrow=2,labels='AUTO'), file=sprintf('output_figures/g_climate_rasters_%s.png', PREFIX_TYPE),width=7,height=4.5)

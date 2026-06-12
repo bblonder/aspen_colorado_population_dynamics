@@ -8,24 +8,34 @@ fn_rasters_stb = dir('data/rasters/',pattern='*_short_term_blend_*',full.names =
 rasters_stb = rast(fn_rasters_stb)
 names(rasters_stb) = paste("STB",2016:2023,sep=".")
 
+fn_rasters_tmax = dir('data/rasters/',pattern='*_tmax_*',full.names = TRUE) # mean tmax
+rasters_tmax = rast(fn_rasters_tmax)
+names(rasters_tmax) = paste("Tmax",2016:2023,sep=".")
+
 get_climate_ts_at_location <- function(lat, lon)
 {
   stopifnot(length(lat)==1)
-  p = vect(cbind(lon=lon,lat=lat), crs="+proj=longlat +datum=WGS84")
+  p = data.frame(lon=lon,lat=lat) %>% st_as_sf(coords=c('lon','lat'),crs=4326)
 
-  ts_swe = extract(rasters_swe, p) %>% 
+  ts_swe = terra::extract(rasters_swe, p) %>% 
     select(-ID) %>%
     t %>%
     as.data.frame %>%
     rename(SWE=1)
   
-  ts_stb = extract(rasters_stb, p) %>% 
+  ts_stb = terra::extract(rasters_stb, p) %>% 
     select(-ID) %>%
     t %>%
     as.data.frame %>%
     rename(STB=1)
   
-  return(cbind(ts_swe, ts_stb))
+  ts_tmax = terra::extract(rasters_tmax, p) %>% 
+    select(-ID) %>%
+    t %>%
+    as.data.frame %>%
+    rename(Tmax=1)
+  
+  return(cbind(ts_swe, ts_stb, ts_tmax))
 }
 
 make_climate_ts_at_location <- function(lat, lon, num_time_points=100, weight_1=3)

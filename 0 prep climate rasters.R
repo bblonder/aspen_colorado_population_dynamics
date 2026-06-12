@@ -16,6 +16,10 @@ fn_rasters_stb = dir('data/rasters/',pattern='*_short_term_blend_*',full.names =
 rasters_stb = rast(fn_rasters_stb)
 names(rasters_stb) = paste("STB",2016:2023,sep=".")
 
+fn_rasters_tmax = dir('data/rasters/',pattern='*_tmax_*',full.names = TRUE) # mean tmax
+rasters_tmax = rast(fn_rasters_tmax)
+names(rasters_tmax) = paste("Tmax",2016:2023,sep=".")
+
 data_sites = read.csv('/Users/benjaminblonder/Documents/ASU/aspen remote sensing/2019/manuscript ploidy 2019/new phyt/SI new phyt/File S1 - aspen data site-level processed 30 Mar 2020.csv') %>%
   select(site_code=Site_Code, Latitude, Longitude)
 
@@ -27,7 +31,10 @@ swe_extracted = terra::extract(rasters_swe, xy)
 
 stb_extracted = terra::extract(rasters_stb, xy)
 
-df_climate = cbind(swe_extracted, stb_extracted) %>%
+tmax_extracted = terra::extract(rasters_tmax, xy)
+
+
+df_climate = cbind(swe_extracted, stb_extracted, tmax_extracted) %>%
   cbind(data_sites %>% select(site_code)) %>%
   select(-ID) %>%
   pivot_longer(!site_code) %>%
@@ -42,7 +49,7 @@ ggsave(g_climate, file='output_figures/g_climate.pdf')
 
 
 g_climate_by_year = df_climate %>% filter(metric!='SPI') %>% select(-name) %>% pivot_wider(names_from=metric) %>%
-  ggplot(aes(x=SWE,y=STB)) + geom_point() +
+  ggplot(aes(x=SWE,y=Tmax)) + geom_point() +
   facet_wrap(~year) +
   theme_bw()
 ggsave(g_climate_by_year, file='output_figures/g_climate_by_year.pdf')
@@ -71,9 +78,11 @@ get_lag_for_year <- function(df, year, metric)
 
 df_lagged_climate_stb = do.call("rbind",lapply(c(2018, 2020, 2023), get_lag_for_year, df=df_climate,metric='STB'))
 df_lagged_climate_swe = do.call("rbind",lapply(c(2018, 2020, 2023), get_lag_for_year, df=df_climate,metric='SWE'))
+df_lagged_climate_tmax = do.call("rbind",lapply(c(2018, 2020, 2023), get_lag_for_year, df=df_climate,metric='Tmax'))
 
 df_lagged_climate = df_lagged_climate_stb %>%
-  left_join(df_lagged_climate_swe, by=c('site_code','year'))
+  left_join(df_lagged_climate_swe, by=c('site_code','year')) %>%
+  left_join(df_lagged_climate_tmax, by=c('site_code','year'))
 
 
 # write out extracts
