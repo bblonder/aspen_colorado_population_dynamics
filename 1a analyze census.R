@@ -21,6 +21,7 @@ library(rnaturalearth)
 library(ggpubr)
 library(cowplot)
 library(ggrepel)
+library(RColorBrewer)
 
 if (!file.exists('output_figures'))
 {
@@ -773,7 +774,7 @@ plots_stb = lapply(r_stb_projected - mean(r_stb_projected), function(r) {
 plots_swe = lapply(r_swe_projected - mean(r_swe_projected), function(r) {
   ggplot() + 
     geom_stars(data=st_as_stars(r)) +
-    scale_fill_gradient2(name='Detrended SWE (May-June)',limits=c(-500,500)) +
+    scale_fill_continuous(palette=brewer.pal(9, 'PiYG'), name='Detrended SWE (May-June) (mm)',limits=c(-600,600)) +
     annotation_scale() +
     theme_void() + 
     ggtitle(names(r)) +
@@ -783,14 +784,14 @@ plots_swe = lapply(r_swe_projected - mean(r_swe_projected), function(r) {
 plots_tmax = lapply(r_tmax_projected - mean(r_tmax_projected), function(r) {
   ggplot() + 
     geom_stars(data=st_as_stars(r)) +
-    scale_fill_gradient2(name='Detrended mean Tmax (June - August)',limits=c(-2.5,2.5)) +
+    scale_fill_continuous(palette=brewer.pal(9, 'RdBu'), name='Detrended mean Tmax (June - August) (°C)',limits=c(-2.5,2.5)) +
     annotation_scale() +
     theme_void() + 
     ggtitle(names(r)) +
     coord_equal()
 })
 
-g_plot_stb = ggarrange(plotlist=plots_stb,nrow=1,common.legend = TRUE,legend='bottom')
+#g_plot_stb = ggarrange(plotlist=plots_stb,nrow=1,common.legend = TRUE,legend='bottom')
 g_plot_swe = ggarrange(plotlist=plots_swe,nrow=1,common.legend = TRUE,legend='bottom')
 g_plot_tmax = ggarrange(plotlist=plots_tmax,nrow=1,common.legend = TRUE,legend='bottom')
 

@@ -1,3 +1,24 @@
+library(progress)
+library(dplyr)
+library(tidyr)
+library(Rage)
+library(ggpubr)
+library(ggplot2)
+# assumes script 3 has been run up to creating model test
+load('output_data/workspace for ipm.Rdata')
+
+
+model_output_test = run_model(geneticSexIDmale = '0',#geneticSexIDfemale = '0',
+                              Ploidy_leveltriploid = '0',
+                              Cos.aspect = -1,
+                              Elevation=3000,
+                              prefix_this = 'test', 
+                              n_iterations = 300,
+                              n_S_scale_factor=1,
+                              SWE.sequence=rep(100,1000+1),
+                              Tmax.sequence=rep(21,1000+1),
+                              save_plot = TRUE, save_P = TRUE)
+
 coef_survival = model_output_test$coef_survival
 coef_size_variance = model_output_test$coef_size_variance
 coef_growth = model_output_test$coef_growth
@@ -41,12 +62,23 @@ gxy<-function(x,y) {
 size_bins = 5:70
 epsilon_x = sapply(size_bins, function(x) {1-integrate(function(y) {gxy(x,y)}, head(size_bins,1), tail(size_bins,1))$value})
 
-pdf(file='output_figures/g_eviction.pdf')
-plot_kernel(5, 70, 
-            100, P_final, 'P after 300 timesteps')
-plot(size_bins, epsilon_x,type='l',main='flattening gxy outside 5-60 cm',ylab='epsilon(x)',ylim=c(-1,1),color='red')
-plot(model_output_test$bad, main='basal area density',xlab='timestep')
-dev.off()
+df_eviction = data.frame(size=size_bins, epsilon=epsilon_x)
+
+g_eviction1 = ggplot(df_eviction, aes(x=size,y=epsilon)) + 
+  geom_line() + 
+  geom_point() +
+  theme_bw() +
+  ylim(-1e-2,1) +
+  ylab(expression(epsilon)) +
+  xlab(expression(paste('Size (cm)')))
+
+g_eviction2 = plot_kernel(5, 70, 
+                          100, P_final, 'P after 300 timesteps')
+
+
+g_eviction_all = ggarrange(g_eviction1, g_eviction2, labels='auto',align='hv')
+ggsave(g_eviction_all, file='output_figures/g_eviction.png',width=7,height=3)
+ggsave(g_eviction_all, file='output_figures/g_eviction.pdf',width=7,height=3)
 
 
        

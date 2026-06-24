@@ -125,19 +125,6 @@ run_scenario_spatial <- function(df, scenario_name, n_S_scale_factor=1, Tmax_sca
   return(list(ipm_all_this_df=ipm_all_this_df,ipm_all_this=ipm_all_this))  
 }
 
-make_raster <- function(result, variable)
-{
-  pixel_means = result$ipm_all_this_df %>%
-    group_by(pixel) %>%
-    summarize(mean=mean(.data[[variable]]))
-  
-  r_this = r_elev_proj
-  r_this[] = NA
-  r_this[pixel_means$pixel] = pixel_means$mean
-  names(r_this) = variable
-  
-  return(r_this)
-}
 
 
 result_scenario_base = run_scenario_spatial(df_sites_for_ipm_base,scenario_name = 'base')
@@ -149,106 +136,7 @@ result_scenario_climate_stress = run_scenario_spatial(df_sites_for_ipm_base,scen
 
 
 
-save(list=ls(pattern='result*'),file='~/Downloads/scenarios.Rdata')
-
-
-map_scenario <- function(s_this, s_base, variable, name_this, limit_this=NULL, show_legend=TRUE)
-{
-  r_this = make_raster(s_this, variable)
-  r_base = make_raster(s_base, variable)
-  
-  if (is.null(limit_this))
-  {
-    vals = (r_this[] - r_base[])
-    
-    qlo = quantile(vals, 0.05, na.rm=TRUE)
-    qhi = quantile(vals, 0.95, na.rm=TRUE)
-    
-    val_max = max(abs(qlo), abs(qhi))
-  }
-  else
-  {
-    val_max = limit_this
-  }
-  
-  g = ggplot() +
-    theme_void() +
-    geom_stars(data=st_as_stars(r_this - r_base)) +
-    scale_fill_gradient2(limits=c(-val_max, val_max),name=sprintf('∆%s', variable)) +
-    coord_sf()
-  
-  if (show_legend==TRUE)
-  {
-    g = g + theme(legend.position='bottom')  
-  }
-  else
-  {
-    g = g + theme(legend.position='none')
-  }
-
-  return(g)
-}
-
-map_scenario_set <- function(s_this, s_base, name_this, show_legend=FALSE)
-{
-  m1 = map_scenario(s_this=s_this, 
-               s_base=s_base, 
-               variable='n_A_final', 
-               name_this=name_this,
-               #limit_this = 0.2,
-               show_legend = show_legend)
-  
-  m2 = map_scenario(s_this=s_this, 
-               s_base=s_base, 
-               variable='basal_area_density_final', 
-               name_this=name_this,
-               #limit_this = 0.005,
-               show_legend = show_legend)
-  
-  m3 = map_scenario(s_this=s_this, 
-               s_base=s_base, 
-               variable='n_S_final', 
-               name_this=name_this,
-               #limit_this = 2,
-               show_legend = show_legend)
-  
-  m4 = map_scenario(s_this=s_base, 
-               s_base=s_this, 
-               variable='longevity_90_final', 
-               name_this=name_this,
-               #limit_this = 30,
-               show_legend = show_legend)  
-  
-  m_all = list(m1, m2, m3, m4)
-  
-  return(m_all)
-}
-
-
-s1 = map_scenario_set(s_this=result_scenario_n_S_high, 
-                 s_base=result_scenario_base, 
-                 name_this='n_S_high', show_legend = TRUE)
-
-# s2 = map_scenario_set(s_this=result_scenario_tmax_high, 
-#              s_base=result_scenario_base, 
-#              name_this='tmax_high')
-# 
-# s3 = map_scenario_set(s_this=result_scenario_SWE_low, 
-#                  s_base=result_scenario_base, 
-#                  name_this='SWE_low')
-
-s4 = map_scenario_set(s_this=result_scenario_climate_stress, 
-                 s_base=result_scenario_base, 
-                 name_this='climate_stress', show_legend=TRUE)
-
-g_scenarios = ggarrange(plotlist=c(s1, 
-                     #s2, 
-                     #s3, 
-                     s4), nrow=2,ncol=4,align='hv', labels=c('(A) Herbivore management - 200% n_S*',rep('',3), '(B) Climate change - 75% SWE, 110% Tmax',rep('',3)))
-
-ggsave(g_scenarios, file='output_figures/g_scenarios.pdf',width=11,height=7)
-ggsave(g_scenarios, file='output_figures/g_scenarios.png',width=11,height=7)
-
+#save(list=ls(pattern='result*'),file='~/Downloads/scenarios.Rdata')
 
 
 
