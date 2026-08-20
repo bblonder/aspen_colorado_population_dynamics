@@ -123,8 +123,11 @@ g_map_inset = ggplot() +
   scale_fill_viridis_c(option = "cividis",name='Elevation (m)',direction = -1) +
   annotation_scale() +
   annotation_north_arrow(location='br') +
-  geom_sf(data=coords, mapping=aes(color=Ploidy_level,shape=geneticSexID),size=0.5) + 
-  scale_color_manual(values=c('blue','red','gray'),na.value = 'gray',name='Ploidy level') + 
+  new_scale_fill() +
+  new_scale_color() +
+  geom_sf(data=coords, mapping=aes(color=Ploidy_level,shape=geneticSexID),size=1.5) + 
+  scale_color_manual(values=c(alpha("blue",0.2),alpha("red",0.2),alpha("gray",0.2)),na.value = 'gray',name='Ploidy level') + 
+  #scale_fill_manual(values=c(alpha("blue",0.5),alpha("red",0.5),alpha("gray",0.5)),na.value = 'gray',name='Ploidy level') + 
   scale_shape_discrete(name='Sex',na.value=3)
 
 
@@ -139,7 +142,7 @@ g_map_larger = ggplot(data = world) +
         axis.text.y=element_blank(),axis.ticks=element_blank(),
         axis.title.x=element_blank(),
         axis.title.y=element_blank()) +
-  geom_sf(data=coords %>% st_bbox %>% st_as_sfc,color='black',linewidth=1)  +
+  geom_sf(data=coords %>% st_bbox %>% st_as_sfc,color='purple',linewidth=1,size=4)  +
   coord_sf(xlim = c(-125,-70),ylim=c(20,52))
 
 
@@ -147,6 +150,7 @@ g_map_larger = ggplot(data = world) +
 g_map_final = ggdraw(g_map_inset) +
   draw_plot(g_map_larger, x=0.0,y=0.75,width=0.25,height=0.25)
 ggsave(g_map_final, file='output_figures/FIG1_map.png',width=6,height=6)
+ggsave(g_map_final, file='output_figures/FIG1_map.pdf',width=6,height=6)
 
 
 hill_single_trimmed = crop(hill_single,st_bbox(st_buffer(coords, dist=500))) 
@@ -303,25 +307,25 @@ ggsave(g_damage_by_site, file=sprintf('output_figures/g_site_damage_%s.pdf', PRE
 ggsave(g_damage_by_site, file=sprintf('output_figures/g_site_damage_%s.png', PREFIX_TYPE), width=6,height=6)
 
 
-g_n_medium_by_site = ggplot(data_site %>% filter(Point_Type=='Random'), aes(x=year,y=n_medium_trees,group=site_code)) +
+g_n_medium_by_site = ggplot(data_site %>% filter(Point_Type=='Random'), aes(x=year,y=n_medium_trees/(pi*3^2),group=site_code)) +
   geom_line(alpha=0.5) +
   geom_point(alpha=0.5) +
   theme_bw() +
   facet_grid(geneticSexID~Ploidy_level) +
   #scale_y_sqrt() +
-  xlab('Year') + ylab("# medium saplings per subplot") + 
+  xlab('Year') + ylab(expression(paste('n'[S], ' (m'^{-2},')'))) + 
   theme(axis.text.x = element_text(angle = 45, vjust = 0.5, hjust=0.5))
 ggsave(g_n_medium_by_site, file=sprintf('output_figures/g_site_medium_%s.pdf', PREFIX_TYPE), width=6,height=6)
 ggsave(g_n_medium_by_site, file=sprintf('output_figures/g_site_medium_%s.png', PREFIX_TYPE), width=6,height=6)
 
 
-g_n_small_by_site = ggplot(data_site %>% filter(Point_Type=='Random'), aes(x=year,y=n_small_trees,group=site_code)) +
+g_n_small_by_site = ggplot(data_site %>% filter(Point_Type=='Random'), aes(x=year,y=n_small_trees/(pi*3^2),group=site_code)) +
   geom_line(alpha=0.5) +
   geom_point(alpha=0.5) +
   theme_bw() +
   facet_grid(geneticSexID~Ploidy_level) +
   #scale_y_sqrt() +
-  xlab('Year') + ylab("# small saplings per subplot") + 
+  xlab('Year') + ylab(expression(paste('Stem density with dgh smaller than pencil (m'^{-2},')'))) + 
   theme(axis.text.x = element_text(angle = 45, vjust = 0.5, hjust=0.5))
 ggsave(g_n_small_by_site, file=sprintf('output_figures/g_site_small_%s.pdf', PREFIX_TYPE), width=6,height=6)
 ggsave(g_n_small_by_site, file=sprintf('output_figures/g_site_small_%s.png', PREFIX_TYPE), width=6,height=6)
@@ -357,7 +361,7 @@ g_growth_rate_by_site = ggplot(data_site_with_growth,
   geom_line(alpha=0.5) + 
   geom_point(alpha=0.5) +
   facet_grid(geneticSexID~Ploidy_level) +
-  xlab('Year') + ylab("Plot focal tree diameter at breast height (cm)") + 
+  xlab('Year') + ylab("x (focal stem, cm)") + 
   theme_bw() +
   scale_color_manual(values=c('black','red')) + 
   theme(axis.text.x = element_text(angle = 45, vjust = 0.5, hjust=0.5)) +
@@ -385,7 +389,7 @@ g_basal_area = ggplot(data_site %>%
   facet_grid(geneticSexID~Ploidy_level) +
   scale_color_manual(values=c('black','red')) + 
   #scale_y_sqrt() +
-  xlab('Year') + ylab("Basal area density") + 
+  xlab('Year') + ylab(expression(paste('BAD', ' (m'^2, ' m'^{-2},')'))) + 
   theme(axis.text.x = element_text(angle = 45, vjust = 0.5, hjust=0.5)) +
   theme(legend.position='none')
 ggsave(g_basal_area, file=sprintf('output_figures/g_basal_area_by_site_%s.pdf', PREFIX_TYPE),width=6,height=6)
@@ -514,12 +518,13 @@ plot_pca <- function(pca_this, data_this, name)
 # PCA of demographic variables by year (all variables)
 data_pca_all = data_site_with_growth_for_pca %>% 
   filter(Point_Type=='Random') %>%
+  mutate(n_S = n_medium_trees / (pi*3^2)) %>%
   select(site_code, year, Ploidy_level, geneticSexID, 
          #Cos.aspect, Elevation, Slope,
-         n_small = n_small_trees, 
-         n_medium = n_medium_trees, 
+         n_pencil = n_small_trees, 
+         nS=n_S,
          dbh_mean_live,
-         basal_area_density_live,
+         bad_live = basal_area_density_live,
          frac_adult_dead_w_background_mortality_estimate,
          frac_adult_damaged,
          growth_rate#,
@@ -529,14 +534,14 @@ data_pca_all = data_site_with_growth_for_pca %>%
   )
 
 rows_na_pca_full = data_pca_all %>%
-  select(n_small:growth_rate) %>%
+  select(n_pencil:growth_rate) %>%
   rowSums %>%
   is.na
 
 data_pca_all = data_pca_all[which(!rows_na_pca_full),]
 
 pca_all = prcomp(data_pca_all %>%
-                   select(n_small:growth_rate),
+                   select(n_pencil:growth_rate),
                  center=TRUE, scale=TRUE)
 
 plot_pca(pca_all, data_pca_all, 'all_vars')
@@ -624,7 +629,7 @@ results_size = fit_plot_level_model(response_var="dbh_mean_live",
                                          data=df_for_plot_level_model, family=lognormal, zi=FALSE, 
                                          title = 'Focal tree DBH (cm)')
 
-results_n_medium = fit_plot_level_model(response_var="n_medium_trees", 
+results_n_medium = fit_plot_level_model(response_var="I(n_medium_trees/(pi*3^2))", 
                                     data=df_for_plot_level_model, family=lognormal, zi=TRUE, 
                                     title = 'Number medium saplings')
 
@@ -708,38 +713,41 @@ ggsave(g_plot_level, file=sprintf('output_figures/g_plot_level_temporal_trends_%
 
 # make tables of distributions
 
-g_dist1 = ggplot(data_site, aes(x=n_medium_trees,color=factor(year))) + 
-  geom_density() +
+g_dist1 = ggplot(data_site, aes(x=n_medium_trees/(pi*3^2),color=factor(year),fill=factor(year))) + 
+  geom_density(alpha=0.2) +
   theme_bw() +
   facet_wrap(~Point_Type) +
-  xlab('# medium trees') +
+  xlab(expression(paste('n'[S], ' (m'^{-2},')'))) +
   scale_color_discrete(name='Year') +
+    scale_fill_discrete(name='Year') +
   ylab('Probability density')
 
-g_dist2 = ggplot(data_site, aes(x=n_small_trees,color=factor(year))) + 
-  geom_density() +
+g_dist2 = ggplot(data_site, aes(x=n_small_trees/(pi*3^2),color=factor(year),fill=factor(year))) + 
+  geom_density(alpha=0.2) +
   theme_bw() +
   facet_wrap(~Point_Type) +
-  xlab('# small trees') +
+  xlab(expression(paste('n'['tiny']))) +
   scale_color_discrete(name='Year') +
+      scale_fill_discrete(name='Year') +
   ylab('Probability density')
 
-g_dist3 = ggplot(data_site, aes(x=dbh_center_live,color=factor(year))) + 
-  geom_density() +
+g_dist3 = ggplot(data_site, aes(x=dbh_center_live,color=factor(year),fill=factor(year))) + 
+  geom_density(alpha=0.2) +
   theme_bw() +
   facet_wrap(~Point_Type) +
-  xlab('Center tree DBH (cm)') +
+  xlab('x (focal stem, cm)') +
   scale_color_discrete(name='Year') +
+      scale_fill_discrete(name='Year') +
   ylab('Probability density')
 
-g_dist = ggarrange(g_dist3, g_dist1, g_dist2,
-          nrow=2,ncol=2,
+g_dist = ggarrange(g_dist3, g_dist1,
+          nrow=1,ncol=2,
           common.legend = TRUE,
           legend='bottom',
           labels='AUTO',
           align='hv')
-ggsave(g_dist, file=sprintf('output_figures/g_distribution_%s.pdf', PREFIX_TYPE),width=7,height=7)
-ggsave(g_dist, file=sprintf('output_figures/g_distribution_%s.png', PREFIX_TYPE),width=7,height=7)
+ggsave(g_dist, file=sprintf('output_figures/g_distribution_%s.pdf', PREFIX_TYPE),width=7,height=4)
+ggsave(g_dist, file=sprintf('output_figures/g_distribution_%s.png', PREFIX_TYPE),width=7,height=4)
 
 
 

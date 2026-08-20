@@ -2,6 +2,7 @@ library(ggplot2)
 library(dplyr)
 library(ggpubr)
 library(tidyr)
+library(RColorBrewer)
 
 ipms_rmbl = readRDS('output_data/ipms_rmbl_sites.Rdata')
 
@@ -43,7 +44,7 @@ g_bad = ggplot(data_bad, aes(x=time,
   theme_bw() +
   #theme(legend.position='none') +
   xlab('Timestep') + 
-  ylab('Basal area density (m2 m-2)') +
+  ylab(expression(paste('BAD (m'^2, ' m'^{-2},')'))) +
   scale_y_sqrt() +
   scale_color_discrete(name='Dataset resample') +
   theme(legend.position='bottom')
@@ -92,20 +93,19 @@ data_n_A = do.call('rbind',lapply(sites_random, function(site_code_this)
 
 str(data_n_A)
 
-g_n_A = ggplot(data_n_A %>% filter(n_A.time %in% seq(1,300,by=100)), 
+g_n_A = ggplot(data_n_A %>% filter(n_A.time %in% seq(1,500,by=50)), # show only some curves
        aes(x=as.numeric(n_A.name),
            y=n_A.value,group=paste(climate_replicate,dataset_replicate, n_A.time),
-           linetype=factor(dataset_replicate),
            color=n_A.time)) +
   geom_line() +
-  facet_wrap(~site_code,scales='free_y',labeller = label_both) +
-  scale_y_sqrt() +
+  facet_grid(dataset_replicate~site_code,scales='free_y') +
   theme_bw() +
-  scale_color_viridis_c(option='D',name='Timestep') +
-  xlab('Size (cm)') + ylab(expression(paste('n'['A']))) +
+  scale_y_sqrt() +
+  scale_color_gradientn(colors=c('purple2','orange2','red1'),name='Timestep') +
+  xlab('x (cm)') + ylab(expression(paste('n'['A'], ' (m'^{-2},')'))) +
   theme(legend.position='bottom') +
   scale_linetype(name='Dataset resample')
 
-ggsave(g_n_A, file='output_figures/g_example_time_series_n_A.pdf', width=7,height=7)
-ggsave(g_n_A, file='output_figures/g_example_time_series_n_A.png', width=7,height=7)
+ggsave(g_n_A, file='output_figures/g_example_time_series_n_A.pdf', width=7,height=8)
+ggsave(g_n_A, file='output_figures/g_example_time_series_n_A.png', width=7,height=8)
 

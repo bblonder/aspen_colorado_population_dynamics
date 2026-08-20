@@ -29,24 +29,28 @@ r_elev_proj = rast('output_data/r_elevation_aggregated.tif')
 
 
 # define plotting code
-map_scenario <- function(s_this, s_base, variable, name_this)
+map_scenario <- function(s_this, s_base, variable, name_this, units_this, xlab_this, scale_factor = 1)
 {
-  r_this = make_raster(s_this, variable)
-  r_base = make_raster(s_base, variable)
+  r_this = make_raster(s_this, variable) * scale_factor
+  r_base = make_raster(s_base, variable) * scale_factor
   
-  val_max = 100
+  values = (r_this - r_base)[]
+  
+  val_max = max(abs(values),na.rm=TRUE)
   
   g = ggplot() +
     theme_void() +
-    geom_stars(data=st_as_stars(100*(r_this - r_base)/r_base)) +
-    scale_fill_gradient2(limits=c(-val_max, val_max),name='Percent change from baseline (%)') +
+    geom_stars(data=st_as_stars(r_this - r_base)) +
+    scale_fill_gradient2(limits=c(-val_max, val_max),name=units_this) +
     coord_sf() +
     theme(axis.title = theme_bw()$axis.title) +
-    xlab(variable) + ylab('')
+    xlab('') + ylab('') +
+    ggtitle(xlab_this) +
+    theme(plot.title = element_text(hjust = 0.5))
   
-  values = (100*(r_this - r_base)/r_base)[]
+
   
-  print(sprintf('%s - %s: %.0f +/- %.0f percent', variable, name_this, median(values, na.rm=TRUE), abs(diff(quantile(values, c(0.25,0.75), na.rm=TRUE)))))
+  #print(sprintf('%s - %s: %.0f +/- %.0f percent', variable, name_this, median(values, na.rm=TRUE), abs(diff(quantile(values, c(0.25,0.75), na.rm=TRUE)))))
   
   return(g)
 }
@@ -55,22 +59,31 @@ map_scenario_set <- function(s_this, s_base, name_this)
 {
   m1 = map_scenario(s_this=s_this, 
                     s_base=s_base, 
-                    variable='n_A_final', 
+                    variable='n_A_final_ten', 
+                    units_this=expression(paste('m'^{-2})),
+                    xlab_this=expression(paste(Delta, 'n'[A])),
                     name_this=name_this)
   
   m2 = map_scenario(s_this=s_this, 
                     s_base=s_base, 
-                    variable='basal_area_density_final', 
+                    variable='basal_area_density_final_ten', 
+                    units_this=expression(paste('m'^2,'m'^{-2})),
+                    xlab_this=expression(paste(Delta, 'BAD')),
                     name_this=name_this)
   
   m3 = map_scenario(s_this=s_this, 
                     s_base=s_base, 
-                    variable='n_S_final', 
+                    variable='n_S_final_ten', 
+                    units_this=expression(paste('m'^{-2})),
+                    xlab_this=expression(paste(Delta, 'n'[S])),
                     name_this=name_this)
   
   m4 = map_scenario(s_this=s_base, 
                     s_base=s_this, 
-                    variable='longevity_90_final', 
+                    scale_factor = 2.5, # timestep to years
+                    variable='longevity_90_final_ten',
+                    units_this=expression(paste('years')), 
+                    xlab_this=expression(paste(Delta, bar(nu[10]))),
                     name_this=name_this)  
   
   m_all = list(m1, m2, m3, m4)
@@ -114,13 +127,13 @@ g_scenarios = ggarrange(plotlist=c(s1,
                                    #s3, 
                                    s4), nrow=2,ncol=4,
                         align='hv', 
-                        common.legend = TRUE,
+                        common.legend = FALSE,
                         legend='bottom',
                         hjust = c(0,0,0),
-                        labels=c('(A) Herbivore management - 200% n_S*',rep('',3), '(B) Climate change - 75% SWE, 110% Tmax',rep('',3)))
+                        labels=c('(A) Herbivore management - 200% n_S*\n',rep('',3), '(B) Climate change - 80% SWE, 110% Tmax\n',rep('',3)))
 
-ggsave(g_scenarios, file='output_figures/g_scenarios.pdf',width=11,height=7)
-ggsave(g_scenarios, file='output_figures/g_scenarios.png',width=11,height=7)
+ggsave(g_scenarios, file='output_figures/g_scenarios.pdf',width=15,height=11)
+ggsave(g_scenarios, file='output_figures/g_scenarios.png',width=15,height=11)
 
 
 
