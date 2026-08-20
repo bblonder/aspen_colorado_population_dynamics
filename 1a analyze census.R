@@ -584,7 +584,8 @@ df_for_plot_level_model = data_site_with_growth %>%
   mutate(geneticSexID = factor(geneticSexID)) %>%
   # take center tree DBH as mean if only one tree censused
   mutate(dbh_mean_live = ifelse(is.na(dbh_mean_live), dbh_center_live, dbh_mean_live)) %>%
-  mutate(years_after_2018 = year - 2018)
+  mutate(years_after_2018 = year - 2018) %>%
+  mutate(n_S = n_medium_trees/(pi*3^2))
   # filter(!is.na(Ploidy_level)) %>%
   # filter(!is.na(geneticSexID))
   # mutate(Ploidy_level = factor(Ploidy_level)) %>%
@@ -629,9 +630,9 @@ results_size = fit_plot_level_model(response_var="dbh_mean_live",
                                          data=df_for_plot_level_model, family=lognormal, zi=FALSE, 
                                          title = 'Focal tree DBH (cm)')
 
-results_n_medium = fit_plot_level_model(response_var="I(n_medium_trees/(pi*3^2))", 
+results_n_medium = fit_plot_level_model(response_var="n_S", 
                                     data=df_for_plot_level_model, family=lognormal, zi=TRUE, 
-                                    title = 'Number medium saplings')
+                                    title = 'n_S')
 
 # 
 # results_size$summary
@@ -647,6 +648,29 @@ tab_model(results_size$model, file='output_figures/table_model_plot_level_size.h
 tab_model(results_frac_dead$model, file='output_figures/table_model_plot_level_mortality.html',encoding='UTF-16')
 
 tab_model(results_n_medium$model, file='output_figures/table_model_plot_level_recruitment.html',encoding='UTF-16')
+
+
+
+
+
+
+# make diagnostic plots for each vital rate model
+plot_dharma <- function(m, title_this)
+{
+  sr = simulateResiduals(m)
+  plotQQunif(sr,main='')
+  mtext(side=3,line=2,adj=0,substitute(paste(bold(title_this))))
+  plotResiduals(sr,main='')
+}
+
+pdf(file='output_figures/g_dharma_plot_level.png',width=6,height=7)
+par(mfrow=c(3,2))
+par(mar=c(4,4,4,1))
+plot_dharma(results_size$model,title_this='(A) Plot-level size')
+plot_dharma(results_frac_dead $model,title_this='(B) Plot-level mortality')
+plot_dharma(results_n_medium $model,title_this='(C) Plot-level recruitment')
+dev.off()
+
 
 
 
