@@ -1,16 +1,24 @@
 library(terra)
 
+years = 2010:2026
+
 fn_rasters_swe = dir('data/rasters/',pattern='*_SWE_*',full.names = TRUE)
 rasters_swe = rast(fn_rasters_swe)
-names(rasters_swe) = paste("SWE",2016:2023,sep=".")
+names(rasters_swe) = paste("SWE",years,sep=".")
+# 
 
-fn_rasters_stb = dir('data/rasters/',pattern='*_short_term_blend_*',full.names = TRUE)
-rasters_stb = rast(fn_rasters_stb)
-names(rasters_stb) = paste("STB",2016:2023,sep=".")
+fn_rasters_ppt = dir('data/rasters/',pattern='*_ppt_*',full.names = TRUE)
+rasters_ppt = rast(fn_rasters_ppt)
+names(rasters_ppt) = paste("PPT",years,sep=".")
+# 
 
-fn_rasters_tmax = dir('data/rasters/',pattern='*_tmax_*',full.names = TRUE) # mean tmax
-rasters_tmax = rast(fn_rasters_tmax)
-names(rasters_tmax) = paste("Tmax",2016:2023,sep=".")
+# fn_rasters_stb = dir('data/rasters/',pattern='*_short_term_blend_*',full.names = TRUE)
+# rasters_stb = rast(fn_rasters_stb)
+# names(rasters_stb) = paste("STB",2016:2023,sep=".")
+# 
+# fn_rasters_tmax = dir('data/rasters/',pattern='*_tmax_*',full.names = TRUE) # mean tmax
+# rasters_tmax = rast(fn_rasters_tmax)
+# names(rasters_tmax) = paste("Tmax",2016:2023,sep=".")
 
 get_climate_ts_at_location <- function(lat, lon)
 {
@@ -23,31 +31,53 @@ get_climate_ts_at_location <- function(lat, lon)
     as.data.frame %>%
     rename(SWE=1)
   
-  ts_stb = terra::extract(rasters_stb, p) %>% 
+  ts_ppt = terra::extract(rasters_ppt, p) %>% 
     select(-ID) %>%
     t %>%
     as.data.frame %>%
-    rename(STB=1)
+    rename(PPT=1)
   
-  ts_tmax = terra::extract(rasters_tmax, p) %>% 
-    select(-ID) %>%
-    t %>%
-    as.data.frame %>%
-    rename(Tmax=1)
+  # ts_stb = terra::extract(rasters_stb, p) %>% 
+  #   select(-ID) %>%
+  #   t %>%
+  #   as.data.frame %>%
+  #   rename(STB=1)
+  # 
+  # ts_tmax = terra::extract(rasters_tmax, p) %>% 
+  #   select(-ID) %>%
+  #   t %>%
+  #   as.data.frame %>%
+  #   rename(Tmax=1)
   
-  return(cbind(ts_swe, ts_stb, ts_tmax))
+  return(cbind(ts_swe, ts_ppt))
 }
 
-make_climate_ts_at_location <- function(lat, lon, num_time_points=100, weight_1=3)
+make_climate_ts_at_location <- function(lat, lon, num_time_points=100, years_this=years)
 {
   climate_this = get_climate_ts_at_location(lat, lon)
+  climate_this$year = years
+  
+  climate_this = climate_this %>% filter(year %in% years_this)
+  
+  row.names(climate_this) <- 1:nrow(climate_this)
   
   tmpFiles(remove=TRUE)
   
   # # of years to skip along series, relative weights
-  sequence = 1 + (cumsum(sample(c(1,2),size=num_time_points,replace=TRUE,prob=c(weight_1,1))) %% nrow(climate_this)) 
+  sequence = 1 + (cumsum(sample(c(1,2,3),size=num_time_points,replace=TRUE,prob=c(3,2,1))) %% nrow(climate_this)) 
+
   
   return(climate_this[sequence,])
+}
+
+make_lagged <- function(ts, num_years)
+{
+  result = sapply(1:(length(ts)-num_years), function(i)
+  {
+    mean(ts[i:(i+num_years-1)])
+  })
+  result = c(result, rep(NA, num_years))
+  return(result)
 }
 
 
@@ -66,5 +96,4 @@ make_climate_ts_at_location <- function(lat, lon, num_time_points=100, weight_1=
 #   reframe(t(fitdistr(value,'normal')$estimate) %>% as.data.frame) %>%
 #   select(-metric) %>%
 #   rename(STB.mean=mean,STB.sd=sd)
-
 

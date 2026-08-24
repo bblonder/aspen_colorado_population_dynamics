@@ -39,17 +39,152 @@ g_bad = ggplot(data_bad, aes(x=time,
                        y=bad,
                        color=factor(dataset_replicate),
                        group=paste(climate_replicate, dataset_replicate))) + 
-  facet_wrap(~site_code,scales='free_y',labeller = label_both) +
-  geom_line() +
+  facet_wrap(~site_code,labeller = label_both) +
+  geom_line(alpha=0.5) +
   theme_bw() +
   #theme(legend.position='none') +
   xlab('Timestep') + 
   ylab(expression(paste('BAD (m'^2, ' m'^{-2},')'))) +
-  scale_y_sqrt() +
+  #cale_y_sqrt() +
   scale_color_discrete(name='Dataset resample') +
   theme(legend.position='bottom')
 ggsave(g_bad, file='output_figures/g_example_time_series_bad.pdf', width=7,height=7)
 ggsave(g_bad, file='output_figures/g_example_time_series_bad.png', width=7,height=7)
+
+
+
+
+
+
+data_n_R = do.call('rbind',lapply(sites_random, function(site_code_this)
+{
+  rows_this = df_rmbl %>% 
+    filter(site_code==site_code_this) %>%
+    pull(row)
+  
+  result = NULL
+  for (i in rows_this) #length(ipms_rmbl)
+  {
+    for (j in 1:10)
+    {
+      df_this = data.frame(site_code=site_code_this,
+                           climate_replicate=i, 
+                           dataset_replicate=j, 
+                           n_R=ipms_rmbl[[i]][[j]]$n_R) %>%
+        mutate(time=row_number())
+      result = rbind(result, df_this)
+    }
+  }
+  return(result)
+}))
+
+
+g_n_R = ggplot(data_n_R, aes(x=time,
+                             y=n_R,
+                             color=factor(dataset_replicate),
+                             group=paste(climate_replicate, dataset_replicate))) + 
+  facet_wrap(~site_code,labeller = label_both) +
+  geom_line(alpha=0.5) +
+  theme_bw() +
+  #theme(legend.position='none') +
+  xlab('Timestep') + 
+  ylab(expression(paste('n'['R'], '(m'^{-2},')'))) +
+  #cale_y_sqrt() +
+  scale_color_discrete(name='Dataset resample') +
+  theme(legend.position='bottom')
+ggsave(g_n_R, file='output_figures/g_example_time_series_n_R.pdf', width=7,height=7)
+ggsave(g_n_R, file='output_figures/g_example_time_series_n_R.png', width=7,height=7)
+
+
+
+
+
+
+
+data_n_S = do.call('rbind',lapply(sites_random, function(site_code_this)
+{
+  rows_this = df_rmbl %>% 
+    filter(site_code==site_code_this) %>%
+    pull(row)
+  
+  result = NULL
+  for (i in rows_this) #length(ipms_rmbl)
+  {
+    for (j in 1:10)
+    {
+      df_this = data.frame(site_code=site_code_this,
+                           climate_replicate=i, 
+                           dataset_replicate=j, 
+                           n_S=ipms_rmbl[[i]][[j]]$n_S) %>%
+        mutate(time=row_number())
+      result = rbind(result, df_this)
+    }
+  }
+  return(result)
+}))
+
+
+g_n_S = ggplot(data_n_S, aes(x=time,
+                             y=n_S,
+                             color=factor(dataset_replicate),
+                             group=paste(climate_replicate, dataset_replicate))) + 
+  facet_wrap(~site_code,labeller = label_both) +
+  geom_line(alpha=0.5) +
+  theme_bw() +
+  #theme(legend.position='none') +
+  xlab('Timestep') + 
+  ylab(expression(paste('n'['S'], '(m'^{-2},')'))) +
+  #cale_y_sqrt() +
+  scale_color_discrete(name='Dataset resample') +
+  theme(legend.position='bottom')
+ggsave(g_n_S, file='output_figures/g_example_time_series_n_S.pdf', width=7,height=7)
+ggsave(g_n_S, file='output_figures/g_example_time_series_n_S.png', width=7,height=7)
+
+
+
+
+
+
+
+data_n_A_density = do.call('rbind',lapply(sites_random, function(site_code_this)
+{
+  rows_this = df_rmbl %>% 
+    filter(site_code==site_code_this) %>%
+    pull(row)
+  
+  result = NULL
+  for (i in rows_this) #length(ipms_rmbl)
+  {
+    for (j in 1:10)
+    {
+      df_this = data.frame(site_code=site_code_this,
+                           climate_replicate=i, 
+                           dataset_replicate=j, 
+                           n_A=rowSums(ipms_rmbl[[i]][[j]]$n_A)) %>%
+        mutate(time=row_number())
+      result = rbind(result, df_this)
+    }
+  }
+  return(result)
+}))
+
+
+g_n_A = ggplot(data_n_A_density, aes(x=time,
+                             y=n_A,
+                             color=factor(dataset_replicate),
+                             group=paste(climate_replicate, dataset_replicate))) + 
+  facet_wrap(~site_code,labeller = label_both) +
+  geom_line(alpha=0.5) +
+  theme_bw() +
+  #theme(legend.position='none') +
+  xlab('Timestep') + 
+  ylab(expression(paste('n'['A'], '(m'^{-2},')'))) +
+  #cale_y_sqrt() +
+  scale_color_discrete(name='Dataset resample') +
+  theme(legend.position='bottom')
+ggsave(g_n_A, file='output_figures/g_example_time_series_n_A.pdf', width=7,height=7)
+ggsave(g_n_A, file='output_figures/g_example_time_series_n_A.png', width=7,height=7)
+
 
 
 
@@ -98,14 +233,15 @@ g_n_A = ggplot(data_n_A %>% filter(n_A.time %in% seq(1,500,by=50)), # show only 
            y=n_A.value,group=paste(climate_replicate,dataset_replicate, n_A.time),
            color=n_A.time)) +
   geom_line() +
-  facet_grid(dataset_replicate~site_code,scales='free_y') +
+  facet_grid(dataset_replicate~site_code) +
   theme_bw() +
   scale_y_sqrt() +
+  scale_x_sqrt() +
   scale_color_gradientn(colors=c('purple2','orange2','red1'),name='Timestep') +
   xlab('x (cm)') + ylab(expression(paste('n'['A'], ' (m'^{-2},')'))) +
   theme(legend.position='bottom') +
   scale_linetype(name='Dataset resample')
 
-ggsave(g_n_A, file='output_figures/g_example_time_series_n_A.pdf', width=7,height=8)
-ggsave(g_n_A, file='output_figures/g_example_time_series_n_A.png', width=7,height=8)
+ggsave(g_n_A, file='output_figures/g_example_time_series_n_A.pdf', width=10,height=12)
+ggsave(g_n_A, file='output_figures/g_example_time_series_n_A.png', width=10,height=12)
 

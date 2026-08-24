@@ -28,6 +28,14 @@ NUM_ITERATIONS = 500
 NUM_CLIMATE_RESAMPLES = 3
 NUM_CORES = 8
 
+
+# load in climate data
+df_climate = read.csv('output_data/df_climate.csv')
+df_sites = read.csv('/Users/benjaminblonder/Documents/ASU/aspen remote sensing/2019/manuscript ploidy 2019/new phyt/SI new phyt/File S1 - aspen data site-level processed 30 Mar 2020.csv') %>%
+  select(site_code=Site_Code, Latitude, Longitude, X.UTM, Y.UTM, Basal.area.density,DBH.mean)
+
+
+
 set.seed(1) # reproducibility of resampling
 
 if (!file.exists('output_figures'))
@@ -48,17 +56,20 @@ transitions_all_filtered_joined_no_na = transitions_all_filtered_joined %>%
   mutate(size_mean = mean(size, na.rm=TRUE), size_sd = sd(size, na.rm=TRUE)) %>%
   dplyr::select(surv, sizeNext, recruit, size, 
                 site_type, site_code, 
-                delta_years,
+                delta_t = delta_years,
                 Ploidy_level, geneticSexID, 
                 Cos.aspect, Elevation, 
-                STB.0:Tmax.2,
+                SWE.0:SWE.5,
+                PPT.0:PPT.5,
                 n_S,
                 n_A, size_mean, size_sd,
                 plot_area_m2) %>%
   # estimate a size_sd for the cases we don't have one
   ungroup %>%
   mutate(size_sd = ifelse(is.na(size_sd), mean(size_sd, na.rm=TRUE), size_sd)) %>%
-  mutate(Ploidy_level=factor(Ploidy_level), geneticSexID=factor(geneticSexID))
+  mutate(Ploidy_level=factor(Ploidy_level), geneticSexID=factor(geneticSexID)) %>%
+  mutate(SWE.lagged = (SWE.0 + SWE.1 + SWE.2 + SWE.3 + SWE.4 + SWE.5)/6) %>%
+  mutate(PPT.lagged = (PPT.0 + PPT.1 + PPT.2 + PPT.3 + PPT.4 + PPT.5)/6)
 #%>%
 #  na.omit %>%
 #  filter(site_type == 'random')
@@ -125,22 +136,35 @@ plot_coefficient_table <- function(models)
 }
 
 
+# look at climate covarites
+transitions_all_filtered_joined_no_na %>%
+  select(contains('SWE'),contains('PPT')) %>%
+  pairs
 
-warning('got rid of the lagged climate effects')
+
+library(glmnetUtils)
 # fit vital rate models
-formula_survival = formula(factor(surv) ~ size + (Ploidy_level + geneticSexID + Cos.aspect + Elevation + I(Elevation^2) + Tmax.1 + SWE.1 + n_A + delta_years))
+formula_survival = formula(factor(surv) ~ size + Ploidy_level + geneticSexID + Cos.aspect + Elevation + SWE.lagged*PPT.lagged + delta_t)
 
 m_survival_all = glm(formula=formula_survival,
                      data = transitions_all_filtered_joined_no_na,
                      family = 'binomial')
+
+# m_survival_glmnet_all = cv.glmnet(formula=formula_survival,
+#           data = transitions_all_filtered_joined_no_na,
+#           family='binomial')
 #m_survival_all_reduced = stepAIC(m_survival_all)
 #summary(m_survival_all_reduced) 
 # 
 pdf(file='output_figures/g_ipm_survival.pdf',width=10,height=10)
-plot_model(m_survival_all, sort.est=TRUE) +
+plot_model(m_survival_all, sort.est=TRUE, type='std') +
   theme_bw() +
   geom_hline(yintercept = 1) +
   ggtitle('survival, standardized effect')
+plot_model(m_survival_all, terms=c('PPT.lagged','SWE.lagged'), type='emm') +
+  theme_bw() +
+  geom_hline(yintercept = 1) +
+  ggtitle('survival')
 simulateResiduals(m_survival_all) %>% plot
 dev.off()
 
@@ -170,7 +194,7 @@ ggsave(g_survival_resampled, file='output_figures/g_survival_resampled.png')
 
 #formula_growth = formula(sizeNext ~ size * (Ploidy_level + geneticSexID))
 
-formula_sizenext = formula(sizeNext ~ size + (Ploidy_level + geneticSexID + Cos.aspect + Elevation + I(Elevation^2) + Tmax.1 + SWE.1 + n_A + delta_years))
+formula_sizenext = formula(sizeNext ~ size + Ploidy_level + geneticSexID + Cos.aspect + Elevation + SWE.lagged*PPT.lagged + n_A + delta_t)
 m_sizenext_all = glm(formula=formula_sizenext, 
                      family='gaussian',
                      data = transitions_all_filtered_joined_no_na)
@@ -179,7 +203,7 @@ m_sizenext_all = glm(formula=formula_sizenext,
 # 
 # 
 pdf(file='output_figures/g_ipm_sizenext.pdf',width=10,height=10)
-plot_model(m_sizenext_all, type='est', sort.est=TRUE, rm.terms='size') +
+plot_model(m_sizenext_all, type='std', sort.est=TRUE) +
   theme_bw() +
   geom_hline(yintercept = 0) +
   ggtitle('sizeNext, standardized effect')
@@ -210,14 +234,16 @@ ggsave(g_sizenext_resampled,file='output_figures/g_sizenext_resampled.png')
 
 
 counts_recruit = transitions_all_filtered_joined_no_na %>%
-  group_by(site_code, site_type, delta_years, year, n_S, Ploidy_level, geneticSexID, Cos.aspect, Elevation, Tmax.0, SWE.0, Tmax.1, SWE.1, n_A, plot_area_m2) %>%
+  group_by(site_code, site_type, delta_t, year, n_S, Ploidy_level, geneticSexID, Cos.aspect, Elevation, SWE.lagged, PPT.lagged, n_A, plot_area_m2) %>%
   tally(recruit) %>%
   #mutate(log_one_plus_n_med_per_pop_dens = log(1+n_medium_trees/population_density_m2)) %>%
   #mutate(has_nonzero_n_med = factor(n_medium_trees > 0)) %>%
   as.data.frame %>%
   mutate(has_S = factor(n_S > 0)) %>%
   mutate(n_R = n/plot_area_m2) %>%
-  mutate(has_R = factor(n_R > 0))
+  mutate(has_R = factor(n_R > 0 & n_S > 0))
+
+warning('cutting off some recruits')
 
 counts_recruit_resampled = lapply(1:NUM_RESAMPLES, function(x) {
   # counts_recruit_grouped = counts_recruit %>%
@@ -237,7 +263,7 @@ counts_recruit_resampled = lapply(1:NUM_RESAMPLES, function(x) {
 })
 
 
-formula_has_R = formula(has_R ~ (Ploidy_level + geneticSexID + Cos.aspect + Elevation + I(Elevation^2) + Tmax.1 + SWE.1 + n_A + delta_years + n_S))
+formula_has_R = formula(has_R ~ Ploidy_level + geneticSexID + Cos.aspect + Elevation + SWE.lagged*PPT.lagged + n_S)
 
 m_has_R_all = glm(formula = formula_has_R,
                   data=counts_recruit,
@@ -246,7 +272,7 @@ m_has_R_all = glm(formula = formula_has_R,
 # summary(m_recruit_count_all_reduced)
 # 
 pdf(file='output_figures/g_ipm_has_R.pdf',width=10,height=10)
-plot_model(m_has_R_all, sort.est=TRUE) +
+plot_model(m_has_R_all, sort.est=TRUE, type='std') +
   theme_bw() +
   geom_hline(yintercept = 1) +
   ggtitle('has recruit, standardized effect')
@@ -271,7 +297,7 @@ ggsave(g_has_R_resampled, file='output_figures/g_has_R_resampled.png')
 
 
 
-formula_n_R_nonzero = formula(n_R ~ (Ploidy_level + geneticSexID + Cos.aspect + Elevation + I(Elevation^2) + Tmax.1 + SWE.1 + n_A + delta_years + n_S))
+formula_n_R_nonzero = formula(I(n_R/n_S) ~ Ploidy_level + geneticSexID + Cos.aspect + Elevation + SWE.lagged*PPT.lagged + n_S)
 
 m_n_R_nonzero_all = glm(formula = formula_n_R_nonzero,
                         data=counts_recruit %>% filter(has_R==TRUE),
@@ -280,7 +306,7 @@ m_n_R_nonzero_all = glm(formula = formula_n_R_nonzero,
 # summary(m_recruit_count_all_reduced)
 # 
 pdf(file='output_figures/g_ipm_n_R_nonzero_all.pdf',width=10,height=10)
-plot_model(m_n_R_nonzero_all, sort.est=TRUE) +
+plot_model(m_n_R_nonzero_all, sort.est=TRUE, type='std') +
   theme_bw() +
   geom_hline(yintercept = 1) +
   ggtitle('n_R, standardized effect')
@@ -306,12 +332,12 @@ ggsave(g_n_R_nonzero_resampled, file='output_figures/g_n_R_nonzero_resampled.png
 
 
 
-formula_has_S = formula(has_S ~ (Ploidy_level + geneticSexID + Cos.aspect + Elevation + I(Elevation^2) + Tmax.1 + SWE.1 + n_A + delta_years))
+formula_has_S = formula(has_S ~ Ploidy_level + geneticSexID + Cos.aspect + Elevation + SWE.lagged*PPT.lagged + n_A)
 
 m_has_S_all = glm(formula_has_S, data=counts_recruit, family='binomial')
 
 
-formula_n_S_nonzero = formula(I(n_S / n_A) ~ (Ploidy_level + geneticSexID + Cos.aspect + Elevation + I(Elevation^2) + Tmax.1 + SWE.1 + n_A + delta_years))
+formula_n_S_nonzero = formula(n_S ~ Ploidy_level + geneticSexID + Cos.aspect + Elevation + SWE.lagged*PPT.lagged + n_A)
 
 # get a theta estimate
 # formula_n_medium = formula(I(n_medium_trees / population_density_m2) ~ (Ploidy_level + geneticSexID + Cos.aspect + Elevation + I(Elevation^2) + STB.0 + SWE.0 + STB.1 + SWE.1 + population_density_m2))
@@ -355,7 +381,7 @@ m_n_S_nonzero_all = glm(formula_n_S_nonzero,
 # tab_model(m_n_medium_all, file='output_figures/table_m_n_medium_all.html')
 
 pdf(file='output_figures/g_ipm_has_S_all.pdf',width=10,height=10)
-plot_model(m_has_S_all, sort.est=TRUE) +
+plot_model(m_has_S_all, sort.est=TRUE, type='std') +
   theme_bw() +
   geom_hline(yintercept = 1) +
   ggtitle('prob sapling, standardized effect')
@@ -365,7 +391,7 @@ dev.off()
 tab_model(m_has_S_all, file='output_figures/table_m_has_S_all.html',transform=NULL, show.std=TRUE)
 
 pdf(file='output_figures/g_ipm_n_S_nonzero.pdf',width=10,height=10)
-plot_model(m_n_S_nonzero_all, sort.est=TRUE) +
+plot_model(m_n_S_nonzero_all, sort.est=TRUE, type='std') +
   theme_bw() +
   geom_hline(yintercept = 1) +
   ggtitle('n_S, standardized effect')
@@ -496,7 +522,7 @@ m_sizenext_size_variance_all = glm(sqrt.resid2~size,data=df_m_sizenext_all,famil
 
 
 pdf(file='output_figures/g_m_sizenext_size_variance_all.pdf',width=10,height=10)
-plot_model(m_sizenext_size_variance_all, sort.est=TRUE) +
+plot_model(m_sizenext_size_variance_all, sort.est=TRUE, type='std') +
   theme_bw() +
   geom_hline(yintercept = 1) +
   ggtitle('sizenext - size variance')
@@ -528,7 +554,9 @@ ggsave(g_sizenext_size_variance_resampled, file='output_figures/g_sizenext_size_
 
 plot_tree_level_effect <- function(m,label)
 {
-  plot(ggpredict(m,terms=list(geneticSexID=c('female','male'),Ploidy_level=c('diploid','triploid')))) +
+  plot(ggpredict(m,
+                 #condition=c(SWE.lagged=200),
+                 terms=list(geneticSexID=c('female','male'),Ploidy_level=c('diploid','triploid'),SWE.lagged=c(0,200),PPT.lagged=c(25,200)))) +
     labs(color='Ploidy level') + ggtitle(label) + ylab('') + xlab('Sex') +
     theme_bw() +
     scale_color_manual(values=c('blue','red'))
@@ -540,12 +568,12 @@ g_tree_level_effect = ggarrange(
   plot_tree_level_effect(m_has_R_all, expression(paste('P(n'[R],'>0)'))),
   plot_tree_level_effect(m_n_R_nonzero_all, expression(paste('n'[R]))),
   plot_tree_level_effect(m_has_S_all, expression(paste('P(n'[S],'>0)'))),
-  plot_tree_level_effect(m_n_S_nonzero_all, expression(paste('n'[S],' / n'[A]))),
+  plot_tree_level_effect(m_n_S_nonzero_all, expression(paste('n'[S]))),
   
   #plot_tree_level_effect(m_growth_size_variance_all, 'Size variance'),
   align='hv',nrow=3,ncol=2,labels='AUTO', common.legend = TRUE, legend='bottom')
-ggsave(g_tree_level_effect, file='output_figures/g_tree_level_effect.pdf',width=6,height=6.5)
-ggsave(g_tree_level_effect, file='output_figures/g_tree_level_effect.png',width=6,height=6.5)
+ggsave(g_tree_level_effect, file='output_figures/g_tree_level_effect.pdf',width=8,height=10)
+ggsave(g_tree_level_effect, file='output_figures/g_tree_level_effect.png',width=8,height=10)
 
 
 
@@ -624,7 +652,7 @@ plot_kernel <- function(minsize, maxsize, m, k, name)
     geom_raster() +
     theme_bw() +
     scale_fill_viridis_c(option='C',name='Value') +
-    xlab('size (cm)') + ylab('sizeNext (cm)') +
+    xlab('x(t) (cm)') + ylab('x(t+1) (cm)') +
     #geom_abline(slope=1,intercept=0,color='white',alpha=0.5) +
     coord_equal() +
     scale_x_continuous(expand=c(0,0)) +
@@ -664,7 +692,8 @@ g_thresholds = ggplot(df_thresholds, aes(x=threshold,y=ba,color=type)) +
   geom_point() +
   theme_bw() +
   xlab('Threshold value') +
-  ylab('Balanced accuracy')
+  ylab('Balanced accuracy') +
+  ylim(0,1)
 ggsave(g_thresholds, file='output_figures/g_thresholds.pdf',width=7,height=5)
 ggsave(g_thresholds, file='output_figures/g_thresholds.png',width=7,height=5)
 
@@ -674,7 +703,7 @@ ggsave(g_thresholds, file='output_figures/g_thresholds.png',width=7,height=5)
 predict_n_R <- function(current_conditions,
                         m_has_R_this = m_has_R_all,
                         m_n_R_nonzero_this = m_n_R_nonzero_all,
-                        prob_threshold = 0.2)
+                        prob_threshold = 0.125)
 {
   # initial recruits set by regression
   # hurdle model (binomial family)
@@ -691,8 +720,8 @@ predict_n_R <- function(current_conditions,
     # gamma family
     mu = update_coefficients_full(coef(m_n_R_nonzero_this), xvar='size', other_vars = current_conditions)
     #print(sprintf('mu=%.9f',mu))
-    # log link
-    n_R = exp(mu)
+    # log link, then multiply by n_S
+    n_R = exp(mu)*current_conditions$n_S
     #print(sprintf('n_R %.3f',n_R))
     
   }
@@ -701,6 +730,12 @@ predict_n_R <- function(current_conditions,
     n_R = 0
   }
   #print(sprintf('n_R=%.9f',n_R))
+  # 
+  # if (n_R > 0.1)
+  # {
+  #   print(paste(names(current_conditions),current_conditions,collapse=' '))
+  #   n_R = 0.1
+  # }
   
   return(n_R)
 }
@@ -709,7 +744,7 @@ predict_n_R <- function(current_conditions,
 predict_n_S <- function(current_conditions,
                         m_has_S_this = m_has_S_all,
                         m_n_S_nonzero_this = m_n_S_nonzero_all,
-                        prob_threshold = 0.2)
+                        prob_threshold = 0.50)
 {
   # initial recruits set by regression
   # hurdle model (binomial family)
@@ -724,10 +759,10 @@ predict_n_S <- function(current_conditions,
   }
   if (prob_S >= prob_threshold)
   {
-    # negbin family, then need to
+    # gamma family
     mu = update_coefficients_full(coef(m_n_S_nonzero_this), xvar='size', other_vars = current_conditions)
-    # log link, then scale factor
-    n_S = (exp(mu))*current_conditions$n_A
+    # log link
+    n_S = exp(mu)
   }
   else
   {
@@ -752,25 +787,59 @@ cc =list(Ploidy_leveltriploid='0',
          geneticSexIDmale='1',
          geneticSexIDunknown='0',
          Cos.aspect=1,
-         Elevation=3200,
-         Tmax.0=22,
-         SWE.0=400,
-         Tmax.1=25,
-         SWE.1=400,
+         Elevation=3000,
+         #Tmax.0=22,
+         #SWE.0=400,
+         #Tmax.1=25,
+         #SWE.0=200,
+         SWE.lagged=50,
+         #PPT.0=40,
+         PPT.lagged=50,
          n_A = 0.2, 
-         delta_years=2.5)
+         delta_t=2.5)
 cc$n_S = predict_n_S(cc)
 predict_n_R(cc)
 
-update_coefficients_full(coef(m_survival_all),other_vars = cc,xvar='size')
-xb=-7.4+0.047*5
+cc_surv = update_coefficients_full(coef(m_survival_all),other_vars = cc,xvar='size')
+xb=cc_surv[1] + cc_surv[2]*20
 exp(xb)/(1+exp(xb))
+
+
+
+
+
+
+source('get_climate.R')
+set.seed(4)
+
+climate_test = make_climate_ts_at_location(lat=38.959158,lon=-106.9897676, num_time_points = 1000, years_this = 2010:2026) # Gothic, CO
+climate_test$SWE.lagged=make_lagged(climate_test$SWE, 6)
+climate_test$PPT.lagged=make_lagged(climate_test$PPT, 6)
+
+
+pdf(file='output_figures/g_climate_dist.pdf',width=10,height=6)
+par(mfrow=c(2,2))
+hist(transitions_all_filtered_joined %>% select(contains('SWE')) %>% as.matrix %>% as.numeric,breaks=50,main='SWE')
+hist(transitions_all_filtered_joined %>% select(contains('PPT')) %>% as.matrix %>% as.numeric,breaks=50,main='PPT')
+hist(climate_test$SWE.lagged,main='SWE.lagged')
+hist(climate_test$PPT.lagged,main='PPT.lagged')
+
+as.numeric(rasters_ppt[]) %>% hist(breaks=50,xlim=c(0,200),main='full raster ppt')
+as.numeric(rasters_swe[]) %>% hist(breaks=50,xlim=c(0,200),main='full raster swe')
+dev.off()
+
+
+
+
+
+
+source('longevity_at_time_stochastic.R')
 
 run_model <- function(prefix_this='test',
                       minsize=4, # L(lower) # 1 cm less to avoid eviction issues
                       maxsize=60, # U(upper)
                       m=100, # mesh points
-                      n_iterations=100, # time steps
+                      n_iterations=200, # time steps
                       n_A_initial=0.2, # initial density
                       size_mean_initial = mean(transitions_all_filtered_joined_no_na$size, na.rm=TRUE), # initial tagged tree size distribution
                       size_sd_initial = sd(transitions_all_filtered_joined_no_na$size, na.rm=TRUE), # initial tagged tree size distribution
@@ -782,11 +851,14 @@ run_model <- function(prefix_this='test',
                       geneticSexIDunknown='0',
                       Cos.aspect=0,
                       Elevation=3200,
-                      Tmax.sequence=rep(20,n_iterations+1), # need one extra point for the time-1 lag
-                      SWE.sequence=rep(200, n_iterations+1), # need one extra point for the time-1 lag
+                      #Tmax.sequence=rep(20,n_iterations+1), # need one extra point for the time-1 lag
+                      SWE.lagged=rep(200, n_iterations+100), # need one extra point for the time-1 lag
+                      PPT.lagged=rep(100, n_iterations+100), # need one extra point for the time-1 lag
                       n_S_lag_factor = 0.2,
                       n_S_scale_factor = 1,
-                      delta_years = 2.5,
+                      delta_t = 2.5,
+                      t_average = 200,
+                      survival_fraction_max = 0.98,
                       
                       # regression models
                       m_sizenext_this = m_sizenext_all,
@@ -825,12 +897,10 @@ run_model <- function(prefix_this='test',
                             geneticSexIDunknown=geneticSexIDunknown,
                             Cos.aspect=Cos.aspect,
                             Elevation=Elevation,
-                            Tmax.0=Tmax.sequence[1+1],
-                            SWE.0=SWE.sequence[1+1],
-                            Tmax.1=Tmax.sequence[1],
-                            SWE.1=SWE.sequence[1],
+                            SWE.lagged=SWE.lagged[1],
+                            PPT.lagged=PPT.lagged[1],
                             n_A=n_A_initial, 
-                            delta_years=delta_years)
+                            delta_t=delta_t)
   
   # get initial number of saplings
   n_S_initial = predict_n_S(current_conditions, 
@@ -873,10 +943,13 @@ run_model <- function(prefix_this='test',
     current_conditions$n_R = n_R
     
     # update environment
-    current_conditions$Tmax.0=Tmax.sequence[i+1]
-    current_conditions$SWE.0=SWE.sequence[i+1]
-    current_conditions$Tmax.1=Tmax.sequence[i]
-    current_conditions$SWE.1=SWE.sequence[i]
+    #current_conditions$Tmax.0=Tmax.sequence[i+1]
+    #current_conditions$SWE.0=SWE.sequence[i+1]
+    #current_conditions$Tmax.1=Tmax.sequence[i]
+    #current_conditions$SWE.0=SWE.sequence[i+5+1]
+    current_conditions$SWE.lagged=SWE.lagged[i+1]
+    #current_conditions$PPT.0=PPT.sequence[i+5+1]
+    current_conditions$PPT.lagged=PPT.lagged[i+1]
     
     # get coefficients on link scale
     # binomial
@@ -887,20 +960,32 @@ run_model <- function(prefix_this='test',
     coef_sizenext_size_variance = as.numeric(get_coefficient_vector(m_sizenext_size_variance_this))
     
     xb = coef_survival[1]+coef_survival[2]*20
+    print(sprintf('survival 20 cm = %.3f pptlagged = %.3f swelagged = %.3f',exp(xb)/(1+exp(xb)), current_conditions$PPT.lagged,current_conditions$SWE.lagged))
     
-    #print(sprintf('survival 20 cm = %.3f',exp(xb)/(1+exp(xb))))
+
+    # if (SWE.lagged[i] < 100 & PPT.lagged[i] < 50) # assuming 3 years in a row of low summer rain and spring snowpack
+    # {
+    #   print(sprintf('Drought mortality correction at t=%d',i))
+    #   s_max = survival_fraction_drought
+    # }
+    # else
+    # {
+    #   s_max = 1
+    # }
     
     # survival
     sx <- function(x) {
+      xbeta = coef_survival[1] + x*coef_survival[2]
+      mu = exp(xbeta)/(1 + exp(xbeta)) #
+      
+      mu = mu * survival_fraction_max
+      
+      # # apply correction for larger individuals
       if (x>50)
       {
-        mu = 0.90 # 5% mortality rate, so 1/0.1*2.5 = 25 year expected death once this size class reached
+        mu = mu*0
       }
-      else
-      {
-        xbeta = coef_survival[1] + x*coef_survival[2]
-        mu = exp(xbeta)/(1 + exp(xbeta)) #
-      }
+
       #print(sprintf('survival=%.3f'))
       return(mu)
     }
@@ -1004,7 +1089,7 @@ run_model <- function(prefix_this='test',
     }
   }
   
-  times_final_ten = seq.int(from=n_iterations - 10, n_iterations)
+  times_final_average = seq.int(from=n_iterations - t_average, n_iterations)
   
   # compute statistics of states
   size_mean_at_time <- function(t) 
@@ -1034,16 +1119,17 @@ run_model <- function(prefix_this='test',
     sum(pi*(size_bins/2/100)^2 * n_A_time_series[t,])
   }
   
-  size_mean_final_ten = mean(sapply(times_final_ten, size_mean_at_time))
-  n_A_final_ten = mean(sapply(times_final_ten, n_A_at_time))
-  n_S_final_ten = mean(sapply(times_final_ten, n_S_at_time))
-  n_R_final_ten = mean(sapply(times_final_ten, n_R_at_time))
-  longevity_90_final_ten = mean(sapply(times_final_ten, longevity_at_time))
-  basal_area_density_final_ten = mean(sapply(times_final_ten, basal_area_density_at_time))
-  
+  size_mean_final_average = mean(sapply(times_final_average, size_mean_at_time))
+  n_A_final_average = mean(sapply(times_final_average, n_A_at_time))
+  n_S_final_average = mean(sapply(times_final_average, n_S_at_time))
+  n_R_final_average = mean(sapply(times_final_average, n_R_at_time))
+  longevity_90_final_average =  longevity_at_time_stochastic(tail(P_kernels,t_average), lx_crit=0.1, m=m,L=minsize,U=maxsize) #mean(sapply(times_final_average, longevity_at_time),na.rm=TRUE) # longevity_at_time_stochastic(P_kernels)
+  basal_area_density_final_average = mean(sapply(times_final_average, basal_area_density_at_time))
+
   df_n_density = data.frame(time=1:nrow(n_A_time_series), value=apply(n_A_time_series, 1, sum),type='A') %>%
     rbind(data.frame(time=1:length(n_S_time_series),value=n_S_time_series,type='S')) %>%
-    rbind(data.frame(time=1:length(n_R_time_series),value=n_R_time_series,type='R'))
+    rbind(data.frame(time=1:length(n_R_time_series),value=n_R_time_series,type='R')) %>%
+    rbind(data.frame(time=1:length(n_R_time_series),value=sapply(1:n_iterations, basal_area_density_at_time),type='BAD'))
   
   df_n_A = n_A_time_series %>% 
     as.data.frame
@@ -1053,12 +1139,12 @@ run_model <- function(prefix_this='test',
     pivot_longer(!time) %>%
     mutate(size=as.numeric(name))
   
-  # n_A_final_ten = df_n_density %>%
-  #   filter((time %in% times_final_ten) & type=='A') %>%
+  # n_A_final_average = df_n_density %>%
+  #   filter((time %in% times_final_average) & type=='A') %>%
   #   pull(value) %>%
   #   mean
-  # n_S_final_ten = df_n_density %>%
-  #   filter((time %in% times_final_ten) & type=='S') %>%
+  # n_S_final_average = df_n_density %>%
+  #   filter((time %in% times_final_average) & type=='S') %>%
   #   pull(value) %>%
   #   mean
   
@@ -1073,8 +1159,9 @@ run_model <- function(prefix_this='test',
       
       n_S_lag_factor=n_S_lag_factor,
       n_S_scale_factor=n_S_scale_factor,
-      SWE.mean=mean(SWE.sequence),
-      Tmax.mean=mean(Tmax.sequence),
+      SWE.mean=mean(SWE.lagged,na.rm=TRUE),
+      PPT.mean=mean(PPT.lagged,na.rm=TRUE),
+      #Tmax.mean=mean(Tmax.sequence),
       
       size_mean_initial=size_mean_initial, # units as below
       size_sd_initial=size_sd_initial,
@@ -1082,43 +1169,44 @@ run_model <- function(prefix_this='test',
       n_S_initial = n_S_initial,
       n_R_initial = n_R_initial,
       
-      size_mean_final_ten=size_mean_final_ten, # cm
-      n_A_final_ten = n_A_final_ten, # # m-2
-      n_S_final_ten = n_S_final_ten, # # m-2
-      n_R_final_ten = n_R_final_ten, # # m-2
-      longevity_90_final_ten = longevity_90_final_ten, # timesteps (2.5 yr)
-      basal_area_density_final_ten = basal_area_density_final_ten # m2 m-2
-      
+      size_mean_final_average=size_mean_final_average, # cm
+      n_A_final_average = n_A_final_average, # # m-2
+      n_S_final_average = n_S_final_average, # # m-2
+      n_R_final_average = n_R_final_average, # # m-2
+      longevity_90_final_average = longevity_90_final_average, # timesteps (2.5 yr)
+      basal_area_density_final_average = basal_area_density_final_average # m2 m-2
     )
   )
   # drop unnecessary columns for printing
   params_to_output$n_A = NULL
-  params_to_output$SWE.0 = NULL
-  params_to_output$SWE.1 = NULL
-  params_to_output$Tmax.0 = NULL
-  params_to_output$Tmax.1 = NULL
+  #params_to_output$SWE.0 = NULL
+  #params_to_output$SWE.0 = NULL
+  params_to_output$SWE.lagged = NULL
+  #params_to_output$PPT.0 = NULL
+  params_to_output$PPT.lagged = NULL
+  #params_to_output$Tmax.0 = NULL
+  #params_to_output$Tmax.1 = NULL
   
   if (save_plot==TRUE)
   {
     # make plots
     g1 = ggplot(df_n_A, aes(x=size,y=value,color=time,group=time)) +
-      geom_line() +
+      geom_line(alpha=0.5) +
       theme_bw() + 
-      scale_x_log10() +
+      scale_y_sqrt() +
       xlab('DBH (cm)') +
       ylab('n_A (# m^-2)') +
-      scale_color_viridis_c() +
+      scale_color_viridis_c(option='C') +
       theme(legend.position = 'bottom')
     
     g2 = ggplot(df_n_density, aes(x=time,y=value,color=type)) +
       geom_line() +
       theme_bw() +
       ylab('Population density (# m^-2)') +
-      scale_color_discrete(labels=c(`S`='n_S (saplings)',`A`='n_A (adult stems)','R'='n_R (recruits)')) +
+      scale_color_discrete(labels=c(`S`='n_S (saplings)',`A`='n_A (adult stems)','R'='n_R (recruits)','BAD'='BAD')) +
       xlab('Timestep') +
       facet_wrap(~type,scales='free') +
-      theme(legend.position = 'bottom') +
-      scale_y_sqrt()
+      theme(legend.position = 'bottom')
     
     # g3 = ggplot(n_S_component_time_series %>%
     #                 mutate(time=row_number()) %>%
@@ -1135,7 +1223,8 @@ run_model <- function(prefix_this='test',
     #g_pi = plot_kernel(minsize, maxsize, m=m, k=P_initial,'P initial')
     #g_pf = plot_kernel(minsize, maxsize, m=m, k=P_final,'P final')
     
-    df_env = rbind(data.frame(name='SWE',value=SWE.sequence) %>% mutate(time=1:nrow(.)),data.frame(name='Tmax',value=Tmax.sequence) %>% mutate(time=1:nrow(.)))
+    df_env = rbind(data.frame(name='SWE.lagged',value=SWE.lagged) %>% mutate(time=1:nrow(.)),data.frame(name='PPT.lagged',value=PPT.lagged) %>% mutate(time=1:nrow(.))) %>%
+      filter(time <= n_iterations)
     g_env = ggplot(df_env,
                    aes(x=time,y=value)) + 
       geom_line() +
@@ -1151,7 +1240,9 @@ run_model <- function(prefix_this='test',
     saveRDS(P_kernels[[n_iterations]], file=sprintf('output_figures/model_outputs/P_%d_%s.Rdata', n_iterations, prefix_this))
   }
   
-  return(list(coef_survival=coef_survival, 
+  return(list(
+    #P_kernels = P_kernels,
+    coef_survival=coef_survival, 
               coef_sizenext_size_variance=coef_sizenext_size_variance, 
               coef_sizenext=coef_sizenext,
               size_bins=size_bins,
@@ -1210,52 +1301,45 @@ save(list=varnames_to_save,file='output_data/workspace for ipm.Rdata')
 
 
 
-
-
 # test run
 model_output_test = run_model(Ploidy_leveltriploid='0',
                               Ploidy_levelunknown='0',
-                              geneticSexIDmale='1',
+                              geneticSexIDmale='0',
                               geneticSexIDunknown='0',
-                              Cos.aspect = 1,
-                              Elevation=3200,
+                              Cos.aspect = -1,
+                              Elevation=2800,
                               prefix_this = 'test', 
-                              n_iterations = 100,
+                              n_iterations = 500,
+                              t_average = 300,
                               n_S_scale_factor=1,
-                              SWE.sequence=rnormTrunc(n = 1000+1, 
-                                                      mean = mean(transitions_all_filtered_joined_no_na$SWE.0), 
-                                                      sd = sd(transitions_all_filtered_joined_no_na$SWE.0),
-                                                      min=0,
-                                                      max=1000),
-                              Tmax.sequence=rnormTrunc(n = 1000+1, 
-                                                       mean = mean(transitions_all_filtered_joined_no_na$Tmax.0), 
-                                                       sd = sd(transitions_all_filtered_joined_no_na$Tmax.0),
-                                                       min=0,
-                                                       max=1000),
+                              survival_fraction_max = 0.99,
+                              SWE.lagged=climate_test$SWE.lagged,#rep(200, 1000),
+                              PPT.lagged=climate_test$PPT.lagged,#rep(100, 1000),
                               save_plot = TRUE, save_P = TRUE)
+model_output_test$results$longevity_90_final_average
+model_output_test$results$basal_area_density_final_average
 
-
-
-model_output_test_resampled = run_model_resampled(geneticSexIDmale = '0',#geneticSexIDfemale = '1',
-                                                  Ploidy_leveltriploid = '0',
-                                                  Cos.aspect = 0,
-                                                  Elevation=3000,
-                                                  prefix_this = 'test_resampled', 
-                                                  n_iterations = 200,
-                                                  SWE.sequence=rnormTrunc(n = 1000+1, 
-                                                                          mean = mean(transitions_all_filtered_joined_no_na$SWE.0), 
-                                                                          sd = sd(transitions_all_filtered_joined_no_na$SWE.0),
-                                                                          min=0,
-                                                                          max=1000),
-                                                  Tmax.sequence=rnormTrunc(n = 1000+1, 
-                                                                           mean = mean(transitions_all_filtered_joined_no_na$Tmax.0), 
-                                                                           sd = sd(transitions_all_filtered_joined_no_na$Tmax.0),
-                                                                           min=0,
-                                                                           max=1000),
-                                                  progress = TRUE,
-                                                  save_plot=TRUE,
-                                                  save_P=TRUE,
-                                                  cores=NUM_CORES)
+# 
+# model_output_test_resampled = run_model_resampled(geneticSexIDmale = '0',#geneticSexIDfemale = '1',
+#                                                   Ploidy_leveltriploid = '0',
+#                                                   Cos.aspect = 0,
+#                                                   Elevation=3000,
+#                                                   prefix_this = 'test_resampled', 
+#                                                   n_iterations = 200,
+#                                                   SWE.sequence=rnormTrunc(n = 1000+1, 
+#                                                                           mean = mean(transitions_all_filtered_joined_no_na$SWE.0), 
+#                                                                           sd = sd(transitions_all_filtered_joined_no_na$SWE.0),
+#                                                                           min=0,
+#                                                                           max=1000),
+#                                                   Tmax.sequence=rnormTrunc(n = 1000+1, 
+#                                                                            mean = mean(transitions_all_filtered_joined_no_na$Tmax.0), 
+#                                                                            sd = sd(transitions_all_filtered_joined_no_na$Tmax.0),
+#                                                                            min=0,
+#                                                                            max=1000),
+#                                                   progress = TRUE,
+#                                                   save_plot=TRUE,
+#                                                   save_P=TRUE,
+#                                                   cores=NUM_CORES)
 
 # sapply(model_output_test_resampled, function(x) { try(x$results$n_A_final) }) %>%
 #   as.data.frame() %>%
@@ -1304,7 +1388,7 @@ model_output_test_resampled = run_model_resampled(geneticSexIDmale = '0',#geneti
 # mature_age(matU=model_output_test$P_initial, matR=matR_this,start=1) # output in # of timesteps
 # 
 # # compare against actual growth trajectories
-# with(transitions_all_filtered_joined_no_na, (sizeNext - size)/delta_years) %>% summary
+# with(transitions_all_filtered_joined_no_na, (sizeNext - size)/delta_t) %>% summary
 # # seems reasonable
 # # envelope calculation of # of timesteps (years/3) required to reach 30 cm from 5 cm
 # (30-5)/0.15/3
@@ -1318,40 +1402,43 @@ params = expand.grid(geneticSexIDmale=c('0','1'),
                      Ploidy_leveltriploid=c('0','1'), 
                      Cos.aspect=c(-1,1),
                      Elevation=c(2800,3200),
+                     t_average=300,
                      n_A_initial = mean(transitions_all_filtered_joined_no_na$n_A),
                      n_iterations=NUM_ITERATIONS,
                      climate_replicate=1:NUM_CLIMATE_RESAMPLES,
                      cores=NUM_CORES,
-                     save_plot=FALSE,
+                     save_plot=TRUE,
                      stringsAsFactors=FALSE
 )
 print(nrow(params))
 params$prefix_this=paste('param_sweep',1:nrow(params),sep='_')
+
+# use one climate for everything
+climate_param_sweep = make_climate_ts_at_location(lat=38.959158,lon=-106.9897676, num_time_points = 1000, 
+                                                  years_this = 2010:2026) # Gothic, CO
 
 model_results = pblapply(1:nrow(params), function(i) {
   cat(sprintf('%d %.3f\n',i, i/nrow(params)))
   
   params_this = as.list(params[i,])
   # make environment sequence fluctuate around means
-  params_this$SWE.sequence=rnormTrunc(n = params_this$n_iterations+1, 
-                                      mean = mean(transitions_all_filtered_joined_no_na$SWE.0), 
-                                      sd = sd(transitions_all_filtered_joined_no_na$SWE.0),
-                                      min=0,
-                                      max=1000)
-  params_this$Tmax.sequence=rnormTrunc(n = params_this$n_iterations+1, 
-                                       mean = mean(transitions_all_filtered_joined_no_na$Tmax.0), 
-                                       sd = sd(transitions_all_filtered_joined_no_na$Tmax.0),
-                                       min=0,
-                                       max=50)
+  params_this$SWE.lagged=climate_test$SWE.lagged
+  params_this$PPT.lagged=climate_test$PPT.lagged
+  # params_this$Tmax.sequence=rnormTrunc(n = params_this$n_iterations+1, 
+  #                                      mean = mean(transitions_all_filtered_joined_no_na$Tmax.1), 
+  #                                      sd = sd(transitions_all_filtered_joined_no_na$Tmax.1),
+  #                                      min=0,
+  #                                      max=50)
   # remove unneeded columns
-  params_this$SWE = NULL
-  params_this$Tmax = NULL
+  #params_this$SWE = NULL
+  #params_this$Tmax = NULL
   params_this$climate_replicate = NULL
   #print(params_this)
   
   result = do.call("run_model_resampled",params_this)
   return(result)
 })
+
 model_results_df = do.call('rbind',lapply(1:length(model_results), function(r) { 
   do.call('rbind',lapply(model_results[[r]], function(x) { 
     if (class(x) != 'try-error')
@@ -1426,7 +1513,7 @@ ggsave(g_results_by_run, file='output_figures/g_results_by_run.png',width=10,hei
 
 
 # variation in final density
-g_param_sweep_n_A = ggplot(model_results_df, aes(x=geneticSexID, color=Ploidy_level,y=n_A_final_ten)) +
+g_param_sweep_n_A = ggplot(model_results_df, aes(x=geneticSexID, color=Ploidy_level,y=n_A_final_average)) +
   geom_boxplot(outlier.shape=NA) +
   geom_jitter(position=position_jitterdodge(),alpha=0.5) + 
   theme_bw() +
@@ -1435,7 +1522,7 @@ g_param_sweep_n_A = ggplot(model_results_df, aes(x=geneticSexID, color=Ploidy_le
   scale_color_manual(values=c('blue','red'),name='Ploidy level') +
   xlab('Sex')
 
-g_param_sweep_bad = ggplot(model_results_df, aes(x=geneticSexID, color=Ploidy_level,y=basal_area_density_final_ten)) +
+g_param_sweep_bad = ggplot(model_results_df, aes(x=geneticSexID, color=Ploidy_level,y=basal_area_density_final_average)) +
   geom_boxplot(outlier.shape=NA) +
   geom_jitter(position=position_jitterdodge(),alpha=0.5) + 
   theme_bw() +
@@ -1444,7 +1531,7 @@ g_param_sweep_bad = ggplot(model_results_df, aes(x=geneticSexID, color=Ploidy_le
   scale_color_manual(values=c('blue','red'),name='Ploidy level') +
   xlab('Sex')
 
-g_param_sweep_n_S = ggplot(model_results_df, aes(x=geneticSexID, color=Ploidy_level,y=n_S_final_ten)) +
+g_param_sweep_n_S = ggplot(model_results_df, aes(x=geneticSexID, color=Ploidy_level,y=n_S_final_average)) +
   geom_boxplot(outlier.shape=NA) +
   geom_jitter(position=position_jitterdodge(),alpha=0.5) + 
   theme_bw() +
@@ -1454,7 +1541,7 @@ g_param_sweep_n_S = ggplot(model_results_df, aes(x=geneticSexID, color=Ploidy_le
   xlab('Sex')
 
 
-g_param_sweep_longevity = ggplot(model_results_df, aes(x=geneticSexID, color=Ploidy_level,y=2.5*longevity_90_final_ten)) +
+g_param_sweep_longevity = ggplot(model_results_df, aes(x=geneticSexID, color=Ploidy_level,y=2.5*longevity_90_final_average)) +
   geom_boxplot(outlier.shape=NA) +
   geom_jitter(position=position_jitterdodge(),alpha=0.5) + 
   theme_bw() +
@@ -1463,17 +1550,26 @@ g_param_sweep_longevity = ggplot(model_results_df, aes(x=geneticSexID, color=Plo
   scale_color_manual(values=c('blue','red'),name='Ploidy level') +
   xlab('Sex')
 
+g_param_sweep_size_mean = ggplot(model_results_df, aes(x=geneticSexID, color=Ploidy_level,y=size_mean_final_average)) +
+  geom_boxplot(outlier.shape=NA) +
+  geom_jitter(position=position_jitterdodge(),alpha=0.5) + 
+  theme_bw() +
+  facet_grid(Cos.aspect~Elevation,labeller = label_both) +
+  ylab(expression(paste(bar(x), ' (cm)'))) +
+  scale_color_manual(values=c('blue','red'),name='Ploidy level') +
+  xlab('Sex')
 
-g_param_sweep_combined = ggarrange(g_param_sweep_n_A, g_param_sweep_bad, g_param_sweep_n_S, g_param_sweep_longevity, nrow=2, ncol=2, align='hv',common.legend = TRUE,legend='bottom',labels='auto')
+
+g_param_sweep_combined = ggarrange(g_param_sweep_n_A, g_param_sweep_bad, g_param_sweep_size_mean, g_param_sweep_n_S, g_param_sweep_longevity, nrow=3, ncol=2, align='hv',common.legend = TRUE,legend='bottom',labels='auto')
 
 ggsave(g_param_sweep_combined, file='output_figures/g_param_sweep_combined.png',width=9,height=9)
 ggsave(g_param_sweep_combined, file='output_figures/g_param_sweep_combined.pdf',width=9,height=9)
 
 
 g_param_sweep_pairs = ggpairs(model_results_df, mapping=aes(color=factor(Ploidy_level)), 
-                              columns=c( 'n_A_final_ten', 'basal_area_density_final_ten', 'n_S_final_ten', 'longevity_90_final_ten'),
+                              columns=c( 'n_A_final_average', 'basal_area_density_final_average', 'n_S_final_average', 'longevity_90_final_average', 'size_mean_final_average'),
                               diag='blank',
-                              columnLabels=c('n[A]','BAD','n[S]','bar(nu[10])'),
+                              columnLabels=c('n[A]','BAD','n[S]','bar(nu[10])', 'bar(x)'),
                               labeller = 'label_parsed') +
   theme_bw() +
   scale_color_manual(values=c('blue','red'),name='Ploidy level')
@@ -1485,19 +1581,23 @@ ggsave(g_param_sweep_pairs, file='output_figures/g_param_sweep_pairs.pdf',width=
 
 # compare observed and predicted outcomes
 # not quite a fair fight because predicted is a parameter sweep, the observed is for plots...
-df_n_comparison = rbind(rbind(data.frame(type='predicted',name='n_A',value=model_results_df$n_A_final_ten), 
+df_n_comparison = rbind(rbind(data.frame(type='predicted',name='n_A',value=model_results_df$n_A_final_average), 
                               data.frame(type='observed',name='n_A',value=counts_recruit$n_A)),
-                        rbind(data.frame(type='predicted',name='n_S',value=model_results_df$n_S_final_ten), 
+                        rbind(data.frame(type='predicted',name='n_S',value=model_results_df$n_S_final_average), 
                               data.frame(type='observed',name='n_S',value=counts_recruit$n_S)),
-                        data.frame(type='predicted',name='basal_area_density',value=model_results_df$basal_area_density_final_ten), 
-                        data.frame(type='observed',name='basal_area_density',value=transitions_all_filtered_joined$basal_area_density_live))
+                        rbind(data.frame(type='predicted',name='basal_area_density',value=model_results_df$basal_area_density_final_average),
+                              # fix a bug in the BAD code
+                              data.frame(type='observed',name='basal_area_density',value=1/4*transitions_all_filtered_joined$basal_area_density_live)),
+                        rbind(data.frame(type='predicted',name='size_mean',value=model_results_df$size_mean_final_average), 
+                                data.frame(type='observed',name='size_mean',value=df_sites$DBH.mean)),
+                        data.frame(type='predicted',name='longevity_90_years',value=2.5*model_results_df$longevity_90_final_average))
 
 g_param_sweep_obs_pred = ggplot(df_n_comparison, aes(x=value,color=type,fill=type)) + 
   geom_density(alpha=0.5) + 
   facet_wrap(~name,scales='free',ncol=2,
-             labeller=as_labeller(c(n_S='# medium stems, n_S',
-                                    n_A='Population density, N_A',
-                                    basal_area_density='Basal area density, BAD_A'))) +
+             labeller=as_labeller(c(n_S='n_A',
+                                    n_A='n_A',
+                                    basal_area_density='BAD', size_mean=expression(paste(bar(x)))))) +
   theme_bw() +
   scale_color_brewer(palette='Set2') +
   scale_fill_brewer(palette='Set2') +
@@ -1509,25 +1609,38 @@ ggsave(g_param_sweep_obs_pred, file='output_figures/g_param_sweep_obs_pred.pdf',
 ggsave(g_param_sweep_obs_pred, file='output_figures/g_param_sweep_obs_pred.png',width=6,height=6)
 
 
+
+
+
+
 # try other summary stats
 
-m_param_sweep_summary_n_A_final_ten = lm(n_A_final_ten ~ Ploidy_level + geneticSexID + Cos.aspect + Elevation,
+m_param_sweep_summary_n_A_final_average = lm(n_A_final_average ~ Ploidy_level + geneticSexID + Cos.aspect + Elevation,
                                          data=model_results_df)
-tab_model(m_param_sweep_summary_n_A_final_ten, show.std=TRUE, file='output_figures/table_param_sweep_m_summary_n_A_final_ten.html')
+tab_model(m_param_sweep_summary_n_A_final_average, show.std=TRUE, file='output_figures/table_param_sweep_m_summary_n_A_final_average.html')
 
-m_param_sweep_summary_basal_area_density_final_ten = lm(basal_area_density_final_ten ~ Ploidy_level + geneticSexID + Cos.aspect + Elevation,
+m_param_sweep_summary_basal_area_density_final_average = lm(basal_area_density_final_average ~ Ploidy_level + geneticSexID + Cos.aspect + Elevation,
                                                         data=model_results_df)
-tab_model(m_param_sweep_summary_basal_area_density_final_ten, show.std=TRUE, file='output_figures/table_param_sweep_summary_basal_area_density_final_ten.html')
+tab_model(m_param_sweep_summary_basal_area_density_final_average, show.std=TRUE, file='output_figures/table_param_sweep_summary_basal_area_density_final_average.html')
+
+m_param_sweep_summary_size_mean_final_average = lm(basal_area_density_final_average ~ Ploidy_level + geneticSexID + Cos.aspect + Elevation,
+                                                            data=model_results_df)
+tab_model(m_param_sweep_summary_basal_area_density_final_average, show.std=TRUE, file='output_figures/table_param_sweep_summary_basal_area_density_final_average.html')
 
 
-m_param_sweep_summary_n_S_final_ten = lm(n_S_final_ten ~ Ploidy_level + geneticSexID + Cos.aspect + Elevation,
+
+m_param_sweep_summary_n_S_final_average = lm(n_S_final_average ~ Ploidy_level + geneticSexID + Cos.aspect + Elevation,
                                          data=model_results_df)
-tab_model(m_param_sweep_summary_n_S_final_ten, show.std=TRUE, file='output_figures/table_param_sweep_m_summary_n_S_final_ten.html')
+tab_model(m_param_sweep_summary_n_S_final_average, show.std=TRUE, file='output_figures/table_param_sweep_m_summary_n_S_final_average.html')
 
 
-m_param_sweep_summary_longevity_90_final_ten = lm(longevity_90_final_ten ~ Ploidy_level + geneticSexID + Cos.aspect + Elevation,
+m_param_sweep_summary_longevity_90_final_average = lm(longevity_90_final_average ~ Ploidy_level + geneticSexID + Cos.aspect + Elevation,
                                                   data=model_results_df)
-tab_model(m_param_sweep_summary_longevity_90_final_ten, show.std=TRUE, file='output_figures/table_param_sweep_m_summary_longevity_90_final_ten.html')
+tab_model(m_param_sweep_summary_longevity_90_final_average, show.std=TRUE, file='output_figures/table_param_sweep_m_summary_longevity_90_final_average.html')
+
+m_param_sweep_summary_size_mean_final_average = lm(size_mean_final_average ~ Ploidy_level + geneticSexID + Cos.aspect + Elevation,
+                                                      data=model_results_df)
+tab_model(m_param_sweep_summary_size_mean_final_average, show.std=TRUE, file='output_figures/table_m_param_sweep_summary_size_mean_final_average.html')
 
 
 
@@ -1543,12 +1656,6 @@ tab_model(m_param_sweep_summary_longevity_90_final_ten, show.std=TRUE, file='out
 
 
 
-
-
-# load in climate data
-df_climate = read.csv('output_data/df_climate.csv')
-df_sites = read.csv('/Users/benjaminblonder/Documents/ASU/aspen remote sensing/2019/manuscript ploidy 2019/new phyt/SI new phyt/File S1 - aspen data site-level processed 30 Mar 2020.csv') %>%
-  select(site_code=Site_Code, Latitude, Longitude, X.UTM, Y.UTM, Basal.area.density)
 
 
 
@@ -1589,7 +1696,9 @@ climate_all = lapply(1:nrow(df_sites_for_ipm), function(i)
   cat(sprintf('%d %.3f\n',i, i/nrow(df_sites_for_ipm)))
   lat_this = df_sites_for_ipm$Latitude[i]
   lon_this = df_sites_for_ipm$Longitude[i]
-  climate_this = make_climate_ts_at_location(lon=lon_this, lat=lat_this, num_time_points = df_sites_for_ipm$n_iterations[i]+1)
+  climate_this = make_climate_ts_at_location(lon=lon_this, lat=lat_this, num_time_points = df_sites_for_ipm$n_iterations[i]+100)
+  climate_this$SWE.lagged=make_lagged(climate_this$SWE, 6)
+  climate_this$PPT.lagged=make_lagged(climate_this$PPT, 6)
   return(climate_this)
 })
 
@@ -1602,8 +1711,8 @@ ipms_rmbl_sites = pblapply(1:nrow(df_sites_for_ipm), function(i) #
   params_this = as.list(df_sites_for_ipm[i,])
   # make environment sequence
   climate_this = climate_all[[i]]
-  params_this$SWE.sequence=climate_this$SWE
-  params_this$Tmax.sequence=climate_this$Tmax
+  params_this$SWE.lagged=climate_this$SWE.lagged
+  params_this$PPT.lagged=climate_this$PPT.lagged
   # remove unneeded columns
   params_this$year = NULL
   params_this$site_type = NULL
@@ -1636,7 +1745,7 @@ write.csv(ipm_rmbl_df, file='output_data/ipm_rmbl_df.csv',row.names = FALSE)
 
 # do some analyses
 
-m_varcomp_rmbl_n_A = lmer(n_A_final_ten ~ (1|site_code/replicate_data_resample),data=ipm_rmbl_df)
+m_varcomp_rmbl_n_A = lmer(n_A_final_average ~ (1|site_code/replicate_data_resample),data=ipm_rmbl_df)
 variance_fractions_rmbl_n_A = VarCorr(m_varcomp_rmbl_n_A,comp='Variance') %>%
   as.data.frame %>%
   select(grp, vcov) %>%
@@ -1646,7 +1755,7 @@ variance_fractions_rmbl_n_A = VarCorr(m_varcomp_rmbl_n_A,comp='Variance') %>%
                       Residual='Among climate resamples')[grp])
 variance_fractions_rmbl_n_A
 
-m_varcomp_rmbl_bad = lmer(basal_area_density_final_ten ~ (1|site_code/replicate_data_resample),data=ipm_rmbl_df)
+m_varcomp_rmbl_bad = lmer(basal_area_density_final_average ~ (1|site_code/replicate_data_resample),data=ipm_rmbl_df)
 variance_fractions_rmbl_bad = VarCorr(m_varcomp_rmbl_bad,comp='Variance') %>%
   as.data.frame %>%
   select(grp, vcov) %>%
@@ -1656,7 +1765,7 @@ variance_fractions_rmbl_bad = VarCorr(m_varcomp_rmbl_bad,comp='Variance') %>%
                       Residual='Among climate resamples')[grp])
 variance_fractions_rmbl_bad
 
-m_varcomp_rmbl_n_S = lmer(n_S_final_ten ~ (1|site_code/replicate_data_resample),data=ipm_rmbl_df)
+m_varcomp_rmbl_n_S = lmer(n_S_final_average ~ (1|site_code/replicate_data_resample),data=ipm_rmbl_df)
 variance_fractions_rmbl_n_S = VarCorr(m_varcomp_rmbl_n_S,comp='Variance') %>%
   as.data.frame %>%
   select(grp, vcov) %>%
@@ -1666,7 +1775,7 @@ variance_fractions_rmbl_n_S = VarCorr(m_varcomp_rmbl_n_S,comp='Variance') %>%
                       Residual='Among climate resamples')[grp])
 variance_fractions_rmbl_n_S
 
-m_varcomp_rmbl_L_90 = lmer(longevity_90_final_ten ~ (1|site_code/replicate_data_resample),data=ipm_rmbl_df)
+m_varcomp_rmbl_L_90 = lmer(longevity_90_final_average ~ (1|site_code/replicate_data_resample),data=ipm_rmbl_df)
 variance_fractions_rmbl_L_90 = VarCorr(m_varcomp_rmbl_L_90,comp='Variance') %>%
   as.data.frame %>%
   select(grp, vcov) %>%
@@ -1803,17 +1912,19 @@ df_bad_initial = transitions_all_filtered_joined %>%
 ipm_rmbl_df_mean = ipm_rmbl_df %>% 
   left_join(df_bad_initial, by='site_code') %>%
   group_by(site_code, X.UTM, Y.UTM, Ploidy_level, geneticSexID) %>% 
-  summarize(n_A.mean=mean(n_A_final_ten,na.rm=TRUE), 
-            n_A.sd=sd(n_A_final_ten,na.rm=TRUE),
-            n_S.mean=mean(n_S_final_ten,na.rm=TRUE), 
-            n_S.sd=sd(n_S_final_ten,na.rm=TRUE), 
-            longevity.mean=2.5*mean(longevity_90_final_ten,na.rm=TRUE), # convert to years
-            longevity.sd=2.5*sd(longevity_90_final_ten,na.rm=TRUE),
-            bad.mean=mean(basal_area_density_final_ten, na.rm=TRUE),
-            ba.sd=sd(basal_area_density_final_ten,na.rm=TRUE),
-            delta_n_A.mean = mean(n_A_final_ten - n_A_initial,na.rm=TRUE),
-            delta_bad.mean = mean(basal_area_density_final_ten - basal_area_density_initial, na.rm=TRUE),
-            delta_n_S.mean = mean(n_S_final_ten - n_S_initial, na.rm=TRUE))
+  summarize(n_A.mean=mean(n_A_final_average,na.rm=TRUE), 
+            n_A.sd=sd(n_A_final_average,na.rm=TRUE),
+            n_S.mean=mean(n_S_final_average,na.rm=TRUE), 
+            n_S.sd=sd(n_S_final_average,na.rm=TRUE), 
+            size.mean=mean(size_mean_final_average,na.rm=TRUE),
+            size.sd=sd(size_mean_final_average,na.rm = TRUE),
+            longevity.mean=2.5*mean(longevity_90_final_average,na.rm=TRUE), # convert to years
+            longevity.sd=2.5*sd(longevity_90_final_average,na.rm=TRUE),
+            bad.mean=mean(basal_area_density_final_average, na.rm=TRUE),
+            ba.sd=sd(basal_area_density_final_average,na.rm=TRUE),
+            delta_n_A.mean = mean(n_A_final_average - n_A_initial,na.rm=TRUE),
+            delta_bad.mean = mean(basal_area_density_final_average - basal_area_density_initial, na.rm=TRUE),
+            delta_n_S.mean = mean(n_S_final_average - n_S_initial, na.rm=TRUE))
 
 
 (ipm_rmbl_df_mean$delta_n_A.mean > 0) %>% table
@@ -1995,9 +2106,12 @@ df_n_comparison_rmbl = rbind(rbind(data.frame(type='predicted',name='n_A',value=
                                    data.frame(type='observed',name='n_A',value=counts_recruit$n_A)),
                              rbind(data.frame(type='predicted',name='n_S',value=ipm_rmbl_df_mean$n_S.mean), 
                                    data.frame(type='observed',name='n_S',value=counts_recruit$n_S)),
+                             rbind(data.frame(type='predicted',name='size',value=ipm_rmbl_df_mean$size.mean), 
+                                   data.frame(type='observed',name='size',value=df_sites$DBH.mean)),
+                             data.frame(type='predicted',name='longevity',value=ipm_rmbl_df_mean$longevity.mean),
                              data.frame(type='predicted',name='basal_area_density',value=ipm_rmbl_df_mean$bad.mean), 
-                             data.frame(type='observed',name='basal_area_density',value=transitions_all_filtered_joined$basal_area_density_live)) %>%
-  mutate(name=factor(name, levels=c('n_A', 'n_S', 'basal_area_density'), ordered=TRUE))
+                             # fix bug in the code from erin
+                             data.frame(type='observed',name='basal_area_density',value=1/4*transitions_all_filtered_joined$basal_area_density_live))
 
 plot_density <- function(var, label)
 {
@@ -2007,15 +2121,16 @@ plot_density <- function(var, label)
     scale_color_brewer(palette='Set2') +
     scale_fill_brewer(palette='Set2') +
     xlab(label) + 
-    ylab('Density') +
-    scale_x_sqrt()
+    ylab('Density')
 }
 
 g_param_sweep_obs_pred_rmbl = ggarrange(
     plot_density('n_A', expression(paste('n'[A], ' (m'^{-2},')'))),
     plot_density('basal_area_density', expression(paste('BAD', ' (m'^2, ' m'^{-2},')'))),
     plot_density('n_S', expression(paste('n'[S], ' (m'^{-2},')'))), 
-  labels='AUTO',align='hv',common.legend = TRUE, legend='bottom',nrow=1)
+    plot_density('size', expression(paste(bar('x'), ' (cm)'))), 
+    plot_density('longevity', expression(paste(bar(nu[10]), ' (years)'))), 
+  labels='AUTO',align='hv',common.legend = TRUE, legend='bottom',nrow=2,ncol=3)
 
 
 ggsave(g_param_sweep_obs_pred_rmbl, file='output_figures/g_param_sweep_obs_pred_rmbl.pdf',width=8,height=4)
@@ -2164,9 +2279,9 @@ ggsave(g_param_sweep_obs_pred_rmbl, file='output_figures/g_param_sweep_obs_pred_
 #   
 #   # get size dependent coefficients, by setting population density to zero to eliminate its effect
 #   # also standardize to a 3-year interval to interpret the transitions
-#   coef_survival_size = update_coefficients_full(coef(m_survival), xvar='size', other_vars=c(other_vars,population_density_m2=0, delta_years=3))
-#   coef_growth_size = update_coefficients_full(coef(m_growth), xvar='size', other_vars=c(other_vars,population_density_m2=0, delta_years=3))
-#   coef_recruit_n_medium_trees = update_coefficients_full(coef(m_recruit), xvar='size', other_vars=c(other_vars,population_density_m2=0, delta_years=3))
+#   coef_survival_size = update_coefficients_full(coef(m_survival), xvar='size', other_vars=c(other_vars,population_density_m2=0, delta_t=3))
+#   coef_growth_size = update_coefficients_full(coef(m_growth), xvar='size', other_vars=c(other_vars,population_density_m2=0, delta_t=3))
+#   coef_recruit_n_medium_trees = update_coefficients_full(coef(m_recruit), xvar='size', other_vars=c(other_vars,population_density_m2=0, delta_t=3))
 #   # get density dependent coefficients, assming there are no size interactions
 #   coef_growth_density = coef(m_growth)["population_density_m2"]
 #   coef_survival_density = coef(m_survival)["population_density_m2"]
@@ -2573,32 +2688,32 @@ ggsave(g_param_sweep_obs_pred_rmbl, file='output_figures/g_param_sweep_obs_pred_
 
 # check residuals
 df_resid = rbind(
-  data.frame(delta_years = transitions_all_filtered_joined_no_na$delta_years[-na.action(m_survival_all)],
+  data.frame(delta_t = transitions_all_filtered_joined_no_na$delta_t,
              resid=resid(m_survival_all),
              name='survival'),
-  df_resid_sizenext = data.frame(delta_years = transitions_all_filtered_joined_no_na$delta_years[-na.action(m_sizenext_all)],
+  df_resid_sizenext = data.frame(delta_t = transitions_all_filtered_joined_no_na$delta_t[-na.action(m_sizenext_all)],
                                  resid=resid(m_sizenext_all),
                                  name='sizeNext'),
-  df_resid_recruit_count = data.frame(delta_years = counts_recruit %>% filter(n_R>0) %>% pull(delta_years), # all observations non-NA
+  df_resid_n_R = data.frame(delta_t = counts_recruit %>% filter(n_R>0 & n_S>0) %>% pull(delta_t), # all observations non-NA
                                       resid=resid(m_n_R_nonzero_all),
                                       name='n_R'),
-  df_resid_recruit_count = data.frame(delta_years = counts_recruit$delta_years, # all observations non-NA
+  df_resid_has_R = data.frame(delta_t = counts_recruit$delta_t, # all observations non-NA
                                       resid=resid(m_has_R_all),
                                       name='P(n_R>0)'),
   
-  df_resid_n_medium_count = data.frame(delta_years = counts_recruit %>% filter(n_S>0) %>% pull(delta_years),
+  df_resid_n_S = data.frame(delta_t = counts_recruit %>% filter(n_S>0) %>% pull(delta_t),
                                        resid=resid(m_n_S_nonzero_all),
                                        name='n_S'),
-  df_resid_n_medium_count = data.frame(delta_years = counts_recruit %>% pull(delta_years),
+  df_resid_has_S = data.frame(delta_t = counts_recruit %>% pull(delta_t),
                                        resid=resid(m_has_S_all),
                                        name='P(n_S>0)'),
-  df_resid_sizenext_size_variance = data.frame(delta_years = transitions_all_filtered_joined_no_na$delta_years[-na.action(m_sizenext_all)],
+  df_resid_sizenext_size_variance = data.frame(delta_t = transitions_all_filtered_joined_no_na$delta_t[-na.action(m_sizenext_all)],
                                                resid=resid(m_sizenext_size_variance_all),
                                                name='sizenext_size_variance')
 )
 
 
-g_resid = ggplot(df_resid, aes(x=delta_years,y=resid)) +
+g_resid = ggplot(df_resid, aes(x=delta_t,y=resid)) +
   geom_jitter(width=0.1,alpha=0.25,color='purple4') + 
   facet_wrap(~name) +
   theme_bw() +
@@ -2610,7 +2725,7 @@ ggsave(g_resid, file='output_figures/g_resid.pdf',width=7,height=5)
 ggsave(g_resid, file='output_figures/g_resid.png',width=7,height=5)
 
 resid_p_values = lapply(unique(df_resid$name), function(name_this) {
-  lm(resid~delta_years, data=df_resid %>% filter(name==name_this)) %>% anova
+  lm(resid~delta_t, data=df_resid %>% filter(name==name_this)) %>% anova
 })
 names(resid_p_values) = unique(df_resid$name)
 
@@ -2632,7 +2747,7 @@ plot_dharma(m_survival_all,title_this='(A) s')
 plot_dharma(m_sizenext_all,title_this='(B) x(t+1)')
 plot_dharma(m_sizenext_size_variance_all,title_this=expression(paste('(C) ', sigma, '(x)')))
 plot_dharma(m_has_R_all,title_this=expression(paste('(D) P(n'[R],' > 0)')))
-plot_dharma(m_n_R_nonzero_all,title_this='(E) n_R')
+plot_dharma(m_n_R_nonzero_all,title_this='(E) n_R / n_A')
 plot_dharma(m_has_S_all,title_this=expression(paste('(F) P(n'[S],' > 0)')))
-plot_dharma(m_n_S_nonzero_all,title_this=expression(paste('(G) n'[S],'/n'[A])))
+plot_dharma(m_n_S_nonzero_all,title_this=expression(paste('(G) n'[S])))
 dev.off()

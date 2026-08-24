@@ -3,7 +3,7 @@ library(dplyr)
 library(sf)
 
 
-AGGREGATION_LEVEL = 40 # starting at 5 m, so this is multiplicative of that amount
+AGGREGATION_LEVEL = 20 # starting at 5 m, so this is multiplicative of that amount
 
 
 # get topography at 5m resolution

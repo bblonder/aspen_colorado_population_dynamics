@@ -3,6 +3,8 @@ library(ggplot2)
 library(terra)
 library(tidyr)
 
+years=2010:2026
+
 # 
 # fn_rasters_spi = dir('data/rasters/',pattern='*spi90d*',full.names = TRUE)
 # rasters_spi = rast(fn_rasters_spi)
@@ -10,15 +12,19 @@ library(tidyr)
 
 fn_rasters_swe = dir('data/rasters/',pattern='*_SWE_*',full.names = TRUE)
 rasters_swe = rast(fn_rasters_swe)
-names(rasters_swe) = paste("SWE",2016:2023,sep=".")
+names(rasters_swe) = paste("SWE", years,sep=".")
 
-fn_rasters_stb = dir('data/rasters/',pattern='*_short_term_blend_*',full.names = TRUE)
-rasters_stb = rast(fn_rasters_stb)
-names(rasters_stb) = paste("STB",2016:2023,sep=".")
+#fn_rasters_stb = dir('data/rasters/',pattern='*_short_term_blend_*',full.names = TRUE)
+#rasters_stb = rast(fn_rasters_stb)
+#names(rasters_stb) = paste("STB", years,sep=".")
 
-fn_rasters_tmax = dir('data/rasters/',pattern='*_tmax_*',full.names = TRUE) # mean tmax
-rasters_tmax = rast(fn_rasters_tmax)
-names(rasters_tmax) = paste("Tmax",2016:2023,sep=".")
+#fn_rasters_tmax = dir('data/rasters/',pattern='*_tmax_*',full.names = TRUE) # mean tmax
+#rasters_tmax = rast(fn_rasters_tmax)
+#names(rasters_tmax) = paste("Tmax", years,sep=".")
+
+fn_rasters_ppt = dir('data/rasters/',pattern='*_ppt_*',full.names = TRUE) # mean tmax
+rasters_ppt = rast(fn_rasters_ppt)
+names(rasters_ppt) = paste("PPT", years,sep=".")
 
 data_sites = read.csv('/Users/benjaminblonder/Documents/ASU/aspen remote sensing/2019/manuscript ploidy 2019/new phyt/SI new phyt/File S1 - aspen data site-level processed 30 Mar 2020.csv') %>%
   select(site_code=Site_Code, Latitude, Longitude)
@@ -28,13 +34,13 @@ xy = data_sites %>%
   vect(crs="+proj=longlat +datum=WGS84")
 
 swe_extracted = terra::extract(rasters_swe, xy)
+ppt_extracted = terra::extract(rasters_ppt, xy)
+#stb_extracted = terra::extract(rasters_stb, xy)
 
-stb_extracted = terra::extract(rasters_stb, xy)
-
-tmax_extracted = terra::extract(rasters_tmax, xy)
+#tmax_extracted = terra::extract(rasters_tmax, xy)
 
 
-df_climate = cbind(swe_extracted, stb_extracted, tmax_extracted) %>%
+df_climate = cbind(swe_extracted, ppt_extracted) %>% #stb_extracted, tmax_extracted) %>%
   cbind(data_sites %>% select(site_code)) %>%
   select(-ID) %>%
   pivot_longer(!site_code) %>%
@@ -42,14 +48,15 @@ df_climate = cbind(swe_extracted, stb_extracted, tmax_extracted) %>%
   mutate(metric=sapply(name, function(x) { strsplit(x,split="\\.")[[1]][1] }))
 
 g_climate = ggplot(df_climate, aes(x=year,y=value,group=site_code)) +
-  geom_line() +
+  geom_line(alpha=0.1,color='purple') +
   facet_wrap(~metric,scales='free') +
   theme_bw()
-ggsave(g_climate, file='output_figures/g_climate.pdf')
+ggsave(g_climate, file='output_figures/g_climate.pdf',width=8,height=5)
 
 
 g_climate_by_year = df_climate %>% filter(metric!='SPI') %>% select(-name) %>% pivot_wider(names_from=metric) %>%
-  ggplot(aes(x=SWE,y=Tmax)) + geom_point() +
+  ggplot(aes(x=SWE,y=PPT)) + 
+  geom_point(alpha=0.1,color='purple') +
   facet_wrap(~year) +
   theme_bw()
 ggsave(g_climate_by_year, file='output_figures/g_climate_by_year.pdf')
@@ -73,16 +80,19 @@ get_lag_for_year <- function(df, year, metric)
   get_lag(df, year, 0, metric) %>%
     left_join(get_lag(df, year, 1, metric), by=c('site_code','metric','year')) %>%
     left_join(get_lag(df, year, 2, metric), by=c('site_code','metric','year')) %>%
+    left_join(get_lag(df, year, 3, metric), by=c('site_code','metric','year')) %>%
+    left_join(get_lag(df, year, 4, metric), by=c('site_code','metric','year')) %>%
+    left_join(get_lag(df, year, 5, metric), by=c('site_code','metric','year')) %>%
     select(-metric)
 }
 
-df_lagged_climate_stb = do.call("rbind",lapply(c(2018, 2020, 2023), get_lag_for_year, df=df_climate,metric='STB'))
+#df_lagged_climate_stb = do.call("rbind",lapply(c(2018, 2020, 2023), get_lag_for_year, df=df_climate,metric='STB'))
 df_lagged_climate_swe = do.call("rbind",lapply(c(2018, 2020, 2023), get_lag_for_year, df=df_climate,metric='SWE'))
-df_lagged_climate_tmax = do.call("rbind",lapply(c(2018, 2020, 2023), get_lag_for_year, df=df_climate,metric='Tmax'))
+df_lagged_climate_ppt = do.call("rbind",lapply(c(2018, 2020, 2023), get_lag_for_year, df=df_climate,metric='PPT'))
+#df_lagged_climate_tmax = do.call("rbind",lapply(c(2018, 2020, 2023), get_lag_for_year, df=df_climate,metric='Tmax'))
 
-df_lagged_climate = df_lagged_climate_stb %>%
-  left_join(df_lagged_climate_swe, by=c('site_code','year')) %>%
-  left_join(df_lagged_climate_tmax, by=c('site_code','year'))
+df_lagged_climate = df_lagged_climate_swe %>%
+  left_join(df_lagged_climate_ppt, by=c('site_code','year'))
 
 
 # write out extracts

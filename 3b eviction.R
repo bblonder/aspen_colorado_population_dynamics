@@ -8,26 +8,31 @@ library(ggplot2)
 load('output_data/workspace for ipm.Rdata')
 
 
+source('get_climate.R')
+set.seed(4)
+
+climate_test = make_climate_ts_at_location(lat=38.959158,lon=-106.9897676, num_time_points = 1000, years_this = 2010:2026) # Gothic, CO
+climate_test$SWE.lagged=make_lagged(climate_test$SWE, 6)
+climate_test$PPT.lagged=make_lagged(climate_test$PPT, 6)
+
+
+# test run
 model_output_test = run_model(Ploidy_leveltriploid='0',
                               Ploidy_levelunknown='0',
-                              geneticSexIDmale='1',
+                              geneticSexIDmale='0',
                               geneticSexIDunknown='0',
-                              Cos.aspect = 0,
-                              Elevation=3000,
+                              Cos.aspect = -1,
+                              Elevation=2800,
                               prefix_this = 'test', 
-                              n_iterations = NUM_ITERATIONS,
+                              n_iterations = 500,
+                              t_average = 300,
                               n_S_scale_factor=1,
-                              SWE.sequence=rnormTrunc(n = NUM_ITERATIONS+1, 
-                                                      mean = mean(transitions_all_filtered_joined_no_na$SWE.0), 
-                                                      sd = sd(transitions_all_filtered_joined_no_na$SWE.0),
-                                                      min=0,
-                                                      max=1000),
-                              Tmax.sequence=rnormTrunc(n = NUM_ITERATIONS+1, 
-                                                       mean = mean(transitions_all_filtered_joined_no_na$Tmax.0), 
-                                                       sd = sd(transitions_all_filtered_joined_no_na$Tmax.0),
-                                                       min=0,
-                                                       max=1000),
+                              survival_fraction_max = 0.99,
+                              SWE.lagged=climate_test$SWE.lagged,#rep(200, 1000),
+                              PPT.lagged=climate_test$PPT.lagged,#rep(100, 1000),
                               save_plot = TRUE, save_P = TRUE)
+model_output_test$results$longevity_90_final_average
+model_output_test$results$basal_area_density_final_average
 
 
 coef_survival = model_output_test$coef_survival
@@ -36,16 +41,19 @@ coef_sizenext = model_output_test$coef_sizenext
 P_final = readRDS(sprintf('output_figures/model_outputs/P_%d_test.Rdata',NUM_ITERATIONS))
 
 sx <- function(x) {
+  xbeta = coef_survival[1] + x*coef_survival[2]
+  mu = exp(xbeta)/(1 + exp(xbeta)) #
+  
+  mu = mu * survival_fraction_max
+  
+  # # apply correction for larger individuals
   if (x>50)
   {
-    mu = 0.90 # 5% mortality rate, so 1/0.05*2.5 = 50 year expected time to death once this size class reached
+    mu = mu*0
   }
-  else
-  {
-    xbeta = coef_survival[1] + x*coef_survival[2]
-    mu = exp(xbeta)/(1 + exp(xbeta)) #
-    return(mu)
-  }
+  
+  #print(sprintf('survival=%.3f'))
+  return(mu)
 }
 # growth
 gxy<-function(x,y) {

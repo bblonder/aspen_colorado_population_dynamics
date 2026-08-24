@@ -206,6 +206,7 @@ transitions_all_filtered = transitions_all %>%
 # add in the small/medium/dead/density/genetics info
 transitions_all_filtered_joined = transitions_all_filtered %>%
   left_join(df_site_level %>% 
+#              mutate(basal_area_density_live = basal_area_density_live / 4) # to fix a bug in the original BAD code from erin
               select(site_code, year,
                      Ploidy_level, geneticSexID, 
                      n_small_trees, n_medium_trees, 
