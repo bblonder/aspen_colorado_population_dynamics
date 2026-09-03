@@ -2,7 +2,7 @@ library(dplyr)
 
 # get site-level info
 data_climate = read.csv('output_data/df_lagged_climate.csv')
-df_site_level = read.csv('data/aspen_data_site-level_2018-2023_v1allAspen_2024-11-27.csv')
+df_site_level = read.csv('data/aspen_data_site-level_2018-2023_v1allAspen_2026-08-31.csv')
 data_sex = read.csv('/Users/benjaminblonder/Documents/ASU/aspen remote sensing/aspen sex markers/aspen_sex_aug_11_2021.csv') %>%
   mutate(site_code = Site_Code) %>%
   dplyr::select(-Site_Code,-X.UTM,-Y.UTM) %>%
@@ -206,7 +206,6 @@ transitions_all_filtered = transitions_all %>%
 # add in the small/medium/dead/density/genetics info
 transitions_all_filtered_joined = transitions_all_filtered %>%
   left_join(df_site_level %>% 
-#              mutate(basal_area_density_live = basal_area_density_live / 4) # to fix a bug in the original BAD code from erin
               select(site_code, year,
                      Ploidy_level, geneticSexID, 
                      n_small_trees, n_medium_trees, 

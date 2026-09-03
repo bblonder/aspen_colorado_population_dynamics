@@ -136,10 +136,12 @@ plot_coefficient_table <- function(models)
 }
 
 
-# look at climate covarites
+# look at climate covariates
+pdf(file='output_figures/g_pairs_climate.pdf',width=12,height=12)
 transitions_all_filtered_joined_no_na %>%
   select(contains('SWE'),contains('PPT')) %>%
   pairs
+dev.off()
 
 
 library(glmnetUtils)
@@ -566,9 +568,9 @@ g_tree_level_effect = ggarrange(
   plot_tree_level_effect(m_sizenext_all, 'x(t+1)'),
   plot_tree_level_effect(m_survival_all, 's'),
   plot_tree_level_effect(m_has_R_all, expression(paste('P(n'[R],'>0)'))),
-  plot_tree_level_effect(m_n_R_nonzero_all, expression(paste('n'[R]))),
+  plot_tree_level_effect(m_n_R_nonzero_all, expression(paste('n'[R] / 'n'[S]))) + scale_y_log10(),
   plot_tree_level_effect(m_has_S_all, expression(paste('P(n'[S],'>0)'))),
-  plot_tree_level_effect(m_n_S_nonzero_all, expression(paste('n'[S]))),
+  plot_tree_level_effect(m_n_S_nonzero_all, expression(paste('n'[S]))) + scale_y_log10(),
   
   #plot_tree_level_effect(m_growth_size_variance_all, 'Size variance'),
   align='hv',nrow=3,ncol=2,labels='AUTO', common.legend = TRUE, legend='bottom')
@@ -1560,7 +1562,7 @@ g_param_sweep_size_mean = ggplot(model_results_df, aes(x=geneticSexID, color=Plo
   xlab('Sex')
 
 
-g_param_sweep_combined = ggarrange(g_param_sweep_n_A, g_param_sweep_bad, g_param_sweep_size_mean, g_param_sweep_n_S, g_param_sweep_longevity, nrow=3, ncol=2, align='hv',common.legend = TRUE,legend='bottom',labels='auto')
+g_param_sweep_combined = ggarrange(g_param_sweep_n_A, g_param_sweep_bad, g_param_sweep_size_mean, g_param_sweep_n_S, g_param_sweep_longevity, nrow=3, ncol=2, align='hv',common.legend = TRUE,legend='bottom',labels='AUTO')
 
 ggsave(g_param_sweep_combined, file='output_figures/g_param_sweep_combined.png',width=9,height=9)
 ggsave(g_param_sweep_combined, file='output_figures/g_param_sweep_combined.pdf',width=9,height=9)
@@ -1586,8 +1588,7 @@ df_n_comparison = rbind(rbind(data.frame(type='predicted',name='n_A',value=model
                         rbind(data.frame(type='predicted',name='n_S',value=model_results_df$n_S_final_average), 
                               data.frame(type='observed',name='n_S',value=counts_recruit$n_S)),
                         rbind(data.frame(type='predicted',name='basal_area_density',value=model_results_df$basal_area_density_final_average),
-                              # fix a bug in the BAD code
-                              data.frame(type='observed',name='basal_area_density',value=1/4*transitions_all_filtered_joined$basal_area_density_live)),
+                              data.frame(type='observed',name='basal_area_density',value=transitions_all_filtered_joined$basal_area_density_live)),
                         rbind(data.frame(type='predicted',name='size_mean',value=model_results_df$size_mean_final_average), 
                                 data.frame(type='observed',name='size_mean',value=df_sites$DBH.mean)),
                         data.frame(type='predicted',name='longevity_90_years',value=2.5*model_results_df$longevity_90_final_average))
@@ -1741,6 +1742,42 @@ saveRDS(ipms_rmbl_sites, file='output_data/ipms_rmbl_sites.Rdata')
 write.csv(ipm_rmbl_df, file='output_data/ipm_rmbl_df.csv',row.names = FALSE)
 
 
+library(GGally)
+
+my_dens <- function(data, mapping, ...) {
+  ggplot(data = data, mapping=mapping) +
+    geom_density(..., alpha = 0.1) 
+}
+
+my_dens2d <- function (data, mapping, ...)  {
+  p <- ggplot(data = data, mapping = mapping) + 
+
+    geom_point(...,alpha=0.1)
+  p
+}
+
+
+g_rmbl_pairs = ipm_rmbl_df %>% 
+  select(site_code, n_A_final_average, basal_area_density_final_average, n_S_final_average, Ploidy_level, geneticSexID) %>%
+  #group_by(site_code, Ploidy_level, geneticSexID) %>%
+  #summarize(across(n_A_final_average:n_S_final_average, mean)) %>%
+  #ungroup %>%
+  ggpairs(columns=2:4,
+          lower = list(continuous = my_dens2d),
+          diag=list(continuous=my_dens),
+          upper=NULL,
+          mapping=aes(color=Ploidy_level, fill=Ploidy_level),
+          columnLabels=c('n[A]','BAD','n[S]'),
+          labeller = 'label_parsed',
+          alpha=0.5) +
+  theme_bw() +
+  scale_color_manual(values=c('blue','red','black'),name='Ploidy level') +
+  scale_fill_manual(values=c('blue','red','black'),name='Ploidy level') +
+  theme(axis.text = element_text(size=6))
+ggsave(g_rmbl_pairs, file='output_figures/g_rmbl_pairs.pdf',width=7,height=7)
+ggsave(g_rmbl_pairs, file='output_figures/g_rmbl_pairs.png',width=7,height=7)
+
+
 
 
 # do some analyses
@@ -1785,6 +1822,16 @@ variance_fractions_rmbl_L_90 = VarCorr(m_varcomp_rmbl_L_90,comp='Variance') %>%
                       Residual='Among climate resamples')[grp])
 variance_fractions_rmbl_L_90
 
+m_varcomp_rmbl_mean_size = lmer(size_mean_final_average ~ (1|site_code/replicate_data_resample),data=ipm_rmbl_df)
+variance_fractions_rmbl_mean_size = VarCorr(m_varcomp_rmbl_mean_size,comp='Variance') %>%
+  as.data.frame %>%
+  select(grp, vcov) %>%
+  mutate(fraction=vcov/sum(vcov)) %>%
+  mutate(grp_nice = c(`replicate_data_resample:site_code`='Among dataset resamples',
+                      site_code='Among sites',
+                      Residual='Among climate resamples')[grp])
+variance_fractions_rmbl_mean_size
+
 
 g_varcomp_rmbl_n_A = ggplot(variance_fractions_rmbl_n_A, aes(x='',fill=grp_nice,y=fraction)) + 
   geom_col() +
@@ -1804,6 +1851,12 @@ g_varcomp_rmbl_n_S = ggplot(variance_fractions_rmbl_n_S, aes(x='',fill=grp_nice,
   theme_minimal() +
   scale_fill_brewer(palette='Set2',name='Scale') +
   ggtitle(expression(paste('n'[S]))) + xlab('')
+g_varcomp_rmbl_mean_size = ggplot(variance_fractions_rmbl_mean_size, aes(x='',fill=grp_nice,y=fraction)) + 
+  geom_col() +
+  coord_polar(theta='y') +
+  theme_minimal() +
+  scale_fill_brewer(palette='Set2',name='Scale') +
+  ggtitle(expression(bar('x'))) + xlab('')
 g_varcomp_rmbl_L_90 = ggplot(variance_fractions_rmbl_L_90, aes(x='',fill=grp_nice,y=fraction)) + 
   geom_col() +
   coord_polar(theta='y') +
@@ -1812,11 +1865,12 @@ g_varcomp_rmbl_L_90 = ggplot(variance_fractions_rmbl_L_90, aes(x='',fill=grp_nic
   ggtitle(expression(paste(bar(nu[10])))) + xlab('')
 
 g_varcomp_rmbl = ggarrange(g_varcomp_rmbl_n_A, g_varcomp_rmbl_bad,
+                           g_varcomp_rmbl_mean_size,
                            g_varcomp_rmbl_n_S, g_varcomp_rmbl_L_90,
                            labels='AUTO',align='hv',common.legend = TRUE,legend='bottom')
 
-ggsave(g_varcomp_rmbl, file='output_figures/g_varcomp_rmbl.png',width=7,height=7)
-ggsave(g_varcomp_rmbl, file='output_figures/g_varcomp_rmbl.pdf',width=7,height=7)
+ggsave(g_varcomp_rmbl, file='output_figures/g_varcomp_rmbl.png',width=8,height=7)
+ggsave(g_varcomp_rmbl, file='output_figures/g_varcomp_rmbl.pdf',width=8,height=7)
 # 
 # ggplot(ipm_rmbl_df, aes(x=Elevation,y=n_A_final,color=site_code)) +
 #   geom_violin()
@@ -1924,12 +1978,14 @@ ipm_rmbl_df_mean = ipm_rmbl_df %>%
             ba.sd=sd(basal_area_density_final_average,na.rm=TRUE),
             delta_n_A.mean = mean(n_A_final_average - n_A_initial,na.rm=TRUE),
             delta_bad.mean = mean(basal_area_density_final_average - basal_area_density_initial, na.rm=TRUE),
-            delta_n_S.mean = mean(n_S_final_average - n_S_initial, na.rm=TRUE))
+            delta_n_S.mean = mean(n_S_final_average - n_S_initial, na.rm=TRUE),
+            delta_size.mean = mean(size.mean - DBH.mean, na.rm=TRUE))
 
 
 (ipm_rmbl_df_mean$delta_n_A.mean > 0) %>% table
 (ipm_rmbl_df_mean$delta_bad.mean > 0) %>% table
 (ipm_rmbl_df_mean$delta_n_S.mean > 0) %>% table
+(ipm_rmbl_df_mean$delta_size.mean > 0) %>% table
 # mean(df_sites_for_ipm_joined_summarized$lambda.mean,na.rm=TRUE)
 # sd(df_sites_for_ipm_joined_summarized$lambda.mean,na.rm=TRUE)
 # 
@@ -1971,6 +2027,19 @@ g_rmbl_delta_n_S = ggplot(ipm_rmbl_df_mean %>%
   #geom_histogram(binwidth=0.02) +
   theme_bw() + 
   xlab(expression(paste(Delta, 'n'[S], ' (', 'm'^{-2},')'))) +
+  ylab('Probability density')
+
+
+g_rmbl_delta_size_mean = ggplot(ipm_rmbl_df_mean %>% 
+                            filter(Ploidy_level!='unknown') %>% 
+                            filter(geneticSexID!='unknown'), 
+                          aes(x=delta_size.mean)) +
+  facet_grid(Ploidy_level~geneticSexID) +
+  geom_vline(xintercept = 0) +
+  geom_density(fill='gray',alpha=0.5) +
+  #geom_histogram(binwidth=0.02) +
+  theme_bw() + 
+  xlab(expression(paste(Delta, bar('x'), ' (cm)'))) +
   ylab('Probability density')
 
 
@@ -2026,6 +2095,18 @@ g_rmbl_longevity = ggplot(ipm_rmbl_df_mean %>%
   xlab(expression(paste(bar(nu[10]), ' (years)'))) +
   ylab('Probability density')
 
+g_rmbl_size_mean = ggplot(ipm_rmbl_df_mean %>% 
+                            filter(Ploidy_level!='unknown') %>% 
+                            filter(geneticSexID!='unknown'), 
+                          aes(x=size.mean)) +
+  facet_grid(Ploidy_level~geneticSexID) +
+  geom_vline(xintercept = 0) +
+  geom_density(fill='gray',alpha=0.5) +
+  #geom_histogram(binwidth=0.02) +
+  theme_bw() + 
+  xlab(expression(paste(bar(x), ' (cm)'))) +
+  ylab('Probability density')
+
 
 
 
@@ -2070,23 +2151,26 @@ plot_map <- function(data_this, yvar, scale_color_this)
 g_map_rmbl_delta_n_A = plot_map(ipm_rmbl_df_mean, 'delta_n_A.mean',scale_color_gradient2(name=expression(paste(Delta,'n'[A], ' (m'^{-2},')')),midpoint=0,low='darkorange1',high='olivedrab',mid='ivory2'))
 g_map_rmbl_delta_bad = plot_map(ipm_rmbl_df_mean, 'delta_bad.mean',scale_color_gradient2(name=expression(paste(Delta,'BAD', ' (m'^2, ' m'^{-2},')')),midpoint=0,low='darkorange1',high='olivedrab',mid='ivory2'))
 g_map_rmbl_delta_n_S = plot_map(ipm_rmbl_df_mean, 'delta_n_S.mean',scale_color_gradient2(name=expression(paste(Delta,'n'[S], ' (m'^{-2},')')),midpoint=0,low='darkorange1',high='olivedrab',mid='ivory2'))
+g_map_rmbl_delta_size = plot_map(ipm_rmbl_df_mean, 'delta_size.mean',scale_color_gradient2(name=expression(paste(bar('x'), ' (cm)')),midpoint=0,low='darkorange1',high='olivedrab',mid='ivory2'))
 
 
 g_map_rmbl_n_A = plot_map(ipm_rmbl_df_mean, 'n_A.mean',scale_color_gradient(name=expression(paste('n'[A], ' m'^{-2},')')),low='ivory2',high='purple1'))
 g_map_rmbl_bad = plot_map(ipm_rmbl_df_mean, 'bad.mean',scale_color_gradient(name=expression(paste('BAD', ' (m'^2, ' m'^{-2},')')),low='ivory2',high='purple1'))
 g_map_rmbl_n_S = plot_map(ipm_rmbl_df_mean, 'n_S.mean',scale_color_gradient(name=expression(paste('n'[S], ' (m'^{-2},')')),low='ivory2',high='purple1'))
 g_map_rmbl_longevity = plot_map(ipm_rmbl_df_mean, 'longevity.mean',scale_color_gradient(name=expression(paste(bar(nu[10]), ' (years)')),low='ivory2',high='purple1'))
+g_map_rmbl_mean_size = plot_map(ipm_rmbl_df_mean, 'size.mean',scale_color_gradient(name=expression(paste(bar(x), ' (cm)')),low='ivory2',high='purple1'))
+
 
 g_blank = ggplot() + theme_void()
 
 
-g_rmbl_maps = ggarrange(ggarrange(g_rmbl_delta_n_A, g_rmbl_delta_bad, g_rmbl_delta_n_S, g_blank, nrow=1, labels=c('A','B','C','')), 
-                        ggarrange(g_map_rmbl_delta_n_A, g_map_rmbl_delta_bad, g_map_rmbl_delta_n_S, g_blank, nrow=1,align='hv', labels=c('D','E','F','')),
-                        ggarrange(g_rmbl_n_A, g_rmbl_bad, g_rmbl_n_S, g_rmbl_longevity, nrow=1, labels=c('G','H','I','J')), 
-                        ggarrange(g_map_rmbl_n_A, g_map_rmbl_bad, g_map_rmbl_n_S, g_map_rmbl_longevity, nrow=1,align='hv', labels=c('K','L','M','N')),
+g_rmbl_maps = ggarrange(ggarrange(g_rmbl_delta_n_A, g_rmbl_delta_bad, g_rmbl_delta_size_mean, g_rmbl_delta_n_S, g_blank, nrow=1, labels=c('A','B','C','D','')), 
+                        ggarrange(g_map_rmbl_delta_n_A, g_map_rmbl_delta_bad, g_map_rmbl_delta_size, g_map_rmbl_delta_n_S, g_blank, nrow=1,align='hv', labels=c('E','F','G','H','')),
+                        ggarrange(g_rmbl_n_A, g_rmbl_bad, g_rmbl_size_mean, g_rmbl_n_S, g_rmbl_longevity, nrow=1, labels=c('I','J','K','L','M')), 
+                        ggarrange(g_map_rmbl_n_A, g_map_rmbl_bad, g_map_rmbl_mean_size, g_map_rmbl_n_S, g_map_rmbl_longevity, nrow=1,align='hv', labels=c('N','O','P','Q','R')),
                         nrow=4,align='hv')
-ggsave(g_rmbl_maps, file='output_figures/g_rmbl_maps.png',width=13,height=15)
-ggsave(g_rmbl_maps, file='output_figures/g_rmbl_maps.pdf',width=13,height=15)
+ggsave(g_rmbl_maps, file='output_figures/g_rmbl_maps.png',width=16,height=18)
+ggsave(g_rmbl_maps, file='output_figures/g_rmbl_maps.pdf',width=16,height=18)
 
 
 # ggsave(g_map_rmbl_n_A, file='output_figures/g_map_rmbl_n_A.pdf',width=8,height=5)
@@ -2110,8 +2194,7 @@ df_n_comparison_rmbl = rbind(rbind(data.frame(type='predicted',name='n_A',value=
                                    data.frame(type='observed',name='size',value=df_sites$DBH.mean)),
                              data.frame(type='predicted',name='longevity',value=ipm_rmbl_df_mean$longevity.mean),
                              data.frame(type='predicted',name='basal_area_density',value=ipm_rmbl_df_mean$bad.mean), 
-                             # fix bug in the code from erin
-                             data.frame(type='observed',name='basal_area_density',value=1/4*transitions_all_filtered_joined$basal_area_density_live))
+                             data.frame(type='observed',name='basal_area_density',value=transitions_all_filtered_joined$basal_area_density_live))
 
 plot_density <- function(var, label)
 {
@@ -2688,7 +2771,7 @@ ggsave(g_param_sweep_obs_pred_rmbl, file='output_figures/g_param_sweep_obs_pred_
 
 # check residuals
 df_resid = rbind(
-  data.frame(delta_t = transitions_all_filtered_joined_no_na$delta_t,
+  data.frame(delta_t = transitions_all_filtered_joined_no_na$delta_t[-na.action(m_survival_all)],
              resid=resid(m_survival_all),
              name='survival'),
   df_resid_sizenext = data.frame(delta_t = transitions_all_filtered_joined_no_na$delta_t[-na.action(m_sizenext_all)],
@@ -2696,7 +2779,7 @@ df_resid = rbind(
                                  name='sizeNext'),
   df_resid_n_R = data.frame(delta_t = counts_recruit %>% filter(n_R>0 & n_S>0) %>% pull(delta_t), # all observations non-NA
                                       resid=resid(m_n_R_nonzero_all),
-                                      name='n_R'),
+                                      name='n_R / n_S'),
   df_resid_has_R = data.frame(delta_t = counts_recruit$delta_t, # all observations non-NA
                                       resid=resid(m_has_R_all),
                                       name='P(n_R>0)'),
@@ -2709,7 +2792,7 @@ df_resid = rbind(
                                        name='P(n_S>0)'),
   df_resid_sizenext_size_variance = data.frame(delta_t = transitions_all_filtered_joined_no_na$delta_t[-na.action(m_sizenext_all)],
                                                resid=resid(m_sizenext_size_variance_all),
-                                               name='sizenext_size_variance')
+                                               name='sqrt(sigma^2)')
 )
 
 
@@ -2736,7 +2819,7 @@ plot_dharma <- function(m, title_this)
 {
   sr = simulateResiduals(m)
   plotQQunif(sr,main='')
-  mtext(side=3,line=2,adj=0,title_this,font=2)
+  mtext(side=3,line=2,adj=0,title_this)
   plotResiduals(sr,main='')
 }
 
@@ -2747,7 +2830,7 @@ plot_dharma(m_survival_all,title_this='(A) s')
 plot_dharma(m_sizenext_all,title_this='(B) x(t+1)')
 plot_dharma(m_sizenext_size_variance_all,title_this=expression(paste('(C) ', sigma, '(x)')))
 plot_dharma(m_has_R_all,title_this=expression(paste('(D) P(n'[R],' > 0)')))
-plot_dharma(m_n_R_nonzero_all,title_this='(E) n_R / n_A')
+plot_dharma(m_n_R_nonzero_all,title_this=expression(paste('(E) n'[R] / 'n'[S])))
 plot_dharma(m_has_S_all,title_this=expression(paste('(F) P(n'[S],' > 0)')))
 plot_dharma(m_n_S_nonzero_all,title_this=expression(paste('(G) n'[S])))
 dev.off()

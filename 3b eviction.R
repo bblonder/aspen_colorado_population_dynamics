@@ -40,6 +40,7 @@ coef_sizenext_size_variance = model_output_test$coef_sizenext_size_variance
 coef_sizenext = model_output_test$coef_sizenext
 P_final = readRDS(sprintf('output_figures/model_outputs/P_%d_test.Rdata',NUM_ITERATIONS))
 
+# survival
 sx <- function(x) {
   xbeta = coef_survival[1] + x*coef_survival[2]
   mu = exp(xbeta)/(1 + exp(xbeta)) #

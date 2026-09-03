@@ -39,7 +39,7 @@ if(!("PREFIX_TYPE" %in% ls()))
 
 data_climate = read.csv('output_data/df_lagged_climate.csv')
 
-data_site = read.csv(sprintf('data/aspen_data_site-level_2018-2023_%s_2024-11-27.csv',PREFIX_TYPE))
+data_site = read.csv(sprintf('data/aspen_data_site-level_2018-2023_%s_2026-08-31.csv',PREFIX_TYPE))
 data_sex = read.csv('/Users/benjaminblonder/Documents/ASU/aspen remote sensing/aspen sex markers/aspen_sex_aug_11_2021.csv') %>%
   mutate(site_code = Site_Code) %>%
   dplyr::select(-Site_Code,-X.UTM,-Y.UTM) %>%
